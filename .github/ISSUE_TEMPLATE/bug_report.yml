@@ -1,0 +1,28 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Hermio version
+      description: Settings → About
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Install type
+      options: [Installer, Portable]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, what you expected and what you saw. For sync problems, attach the sync log (title bar → sync icon → Copy log) with addresses removed.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Windows version / mail provider / AI provider

@@ -1,0 +1,25 @@
+Hermio
+Copyright (c) 2026 nev-minhnh and the Hermio contributors
+
+Licensed under either of the MIT License (LICENSE-MIT) or the Apache License,
+Version 2.0 (LICENSE-APACHE), at your option.
+
+This product depends on third-party software, each under its own licence:
+
+- Tauri (MIT OR Apache-2.0) — https://tauri.app
+- Svelte (MIT) — https://svelte.dev
+- Vite (MIT) — https://vitejs.dev
+- pdf.js / pdfjs-dist (Apache-2.0) — https://mozilla.github.io/pdf.js
+- SQLite (public domain) via rusqlite (MIT) — https://www.sqlite.org
+- Rust crates listed in src-tauri/Cargo.lock and npm packages listed in
+  package-lock.json, under their respective licences.
+
+Downloaded at run time on the user's request (not bundled):
+
+- FastFlowLM runtime — https://github.com/FastFlowLM/FastFlowLM
+  (see its own licence terms; models from the FastFlowLM collections on Hugging Face)
+- OpenVINO Model Server (Apache-2.0) — https://github.com/openvinotoolkit/model_server
+  (models from the OpenVINO collections on Hugging Face, under their own licences)
+
+Gmail, Google Workspace and Google Calendar are trademarks of Google LLC.
+Hermio is not affiliated with or endorsed by Google, AMD, Intel or any AI provider.
