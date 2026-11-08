@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 concurrency:
@@ -61,10 +63,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish release (tags v*)
+      - name: Attach zips to the release (tags v* / published releases)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Hermio ${{ env.VERSION }}
           files: dist-zips/*.zip
-          generate_release_notes: true
+          fail_on_unmatched_files: true
