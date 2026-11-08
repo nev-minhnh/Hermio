@@ -295,6 +295,7 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
     case "sync_log": return mockLog;
     case "sync_log_clear": mockLog.length = 0; return null;
     case "sync_log_open": return null;
+    case "test_notification": return null;
     case "npu_dirs": return { found: ["qwen3.5:4b", "gemma3:4b"], foreign: ["GGUF (llama.cpp / LM Studio / Ollama): Qwen3-8B-Q4_K_M.gguf, gemma-3-12b-it-Q4_0.gguf"], runtime: "C:\\Users\\Minh\\AppData\\Roaming\\app.nelo.mail\\runtime", runtime_default: "C:\\Users\\Minh\\AppData\\Roaming\\app.nelo.mail\\runtime", runtime_size: 41e6, models: "D:\\AI\\models", models_default: "C:\\Users\\Minh\\.flm\\models", models_size: 3.6e9 };
     case "npu_set_dirs": {
       for (let i = 1; i <= 10; i++) { window.dispatchEvent(new CustomEvent("mock:npu-progress", { detail: { kind: "move", tag: "models", percent: i * 10, done: i, total: 10, line: "", finished: false, error: "" } })); await msleep(120); }

@@ -1264,6 +1264,18 @@ pub fn sync_log_clear() {
     crate::sync::log_clear()
 }
 #[tauri::command]
+pub fn test_notification(state: S) -> R<()> {
+    use tauri_plugin_notification::NotificationExt;
+    state
+        .app
+        .notification()
+        .builder()
+        .title("Hermio")
+        .body("Notifications are working. New mail will show up like this.")
+        .show()
+        .map_err(e)
+}
+#[tauri::command]
 pub fn sync_log_open(app: tauri::AppHandle, state: S) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     let p = crate::sync::log_file(&state);

@@ -3,6 +3,26 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.5.1
+
+New-mail notifications that went missing:
+
+- **Toasts are now shown by the sync itself**, not by the window. Before, they depended on the
+  web page hearing the "new-mail" event, so they were lost during start-up (the first sync runs
+  before the page is ready) and could be lost while the window sat hidden in the tray.
+- **Hermio registers its app ID with Windows** at start-up. Windows drops toasts from an
+  unregistered app, which hit the portable copy (and installs without a Start-menu shortcut).
+  Toasts now also show the Hermio name and icon.
+- A burst of mail (more than 3 at once) gives one summary toast instead of a flood, which
+  Windows tends to swallow.
+- New option *Also notify for mail sorted into groups*. Mail that rules or the AI put into a group
+  hidden from the inbox used to arrive silently, with no way to change that.
+- *Send a test notification* button (Settings → Mail) to check Windows' own notification settings.
+- The sync log now says how many new messages were announced, and why the others weren't
+  (sorted into hidden groups, marked read by a rule).
+- POP3: mail older than two days that is still being downloaded from a large mailbox no
+  longer triggers notifications.
+
 ## 0.5.0 — Hermio
 
 - **New name and identity: Hermio – Automate your inbox flow.** New logo, app icon and a blue

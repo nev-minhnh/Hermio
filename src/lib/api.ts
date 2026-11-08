@@ -323,6 +323,7 @@ export const api = {
   syncLog: () => invoke<SyncLogLine[]>("sync_log"),
   syncLogClear: () => invoke<void>("sync_log_clear"),
   syncLogOpen: () => invoke<void>("sync_log_open"),
+  testNotification: () => invoke<void>("test_notification"),
   npuRedownload: (tag: string) => invoke<void>("npu_redownload", { tag }),
   folders: () => invoke<Folder[]>("list_folders"),
   messages: (query: ListQuery) => invoke<Message[]>("list_messages", { query }),

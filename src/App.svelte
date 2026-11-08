@@ -14,7 +14,7 @@
   import Toasts from "./components/Toasts.svelte";
   import Welcome from "./components/Welcome.svelte";
   import SendQueue from "./components/SendQueue.svelte";
-  import { showWindow, notify } from "./lib/tauri";
+  import { showWindow } from "./lib/tauri";
   import SuggestPopup from "./components/SuggestPopup.svelte";
 
   /** The page being left fades out underneath the new one and no longer takes clicks. */
@@ -78,11 +78,7 @@
       // NPU details are gathered in the background at start-up.
       api.npuInfo().then((i) => (store.npu.info = i)).catch(() => {});
       unsubs.push(await listen<{ message: string }>("sync-warning", (p) => console.warn(p.message)));
-      unsubs.push(
-        await listen<{ account: string; from: string; subject: string }>("new-mail", (p) => {
-          if (store.settings.notifications) notify(p.from || p.account, p.subject || t("(No subject)"));
-        }),
-      );
+      // New-mail toasts are shown by the sync itself (also while this window is hidden).
     })();
 
     const mq = matchMedia("(prefers-color-scheme: dark)");

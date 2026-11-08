@@ -56,6 +56,11 @@ pub fn log(state: &AppState, a: &Account, level: &str, message: impl Into<String
     state.emit("sync-log", &line);
 }
 
+/// A log line that isn't about one mailbox.
+pub fn log_plain(state: &AppState, level: &str, message: impl Into<String>) {
+    log(state, &Account { email: "Hermio".into(), ..Default::default() }, level, message);
+}
+
 pub fn log_lines() -> Vec<LogLine> {
     LOG.lock().unwrap().iter().cloned().collect()
 }

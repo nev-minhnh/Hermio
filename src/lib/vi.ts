@@ -949,4 +949,8 @@ export const vi: Record<string, string> = {
   "+{x} other emails": "+{x} email khác",
   "No reliable rule: these emails have little in common besides their topic. You can still group them.": "Chưa có quy tắc đủ tin cậy: các email này chỉ giống nhau về chủ đề. Bạn vẫn có thể gom nhóm chúng.",
   "Open source under the MIT or Apache-2.0 licence.": "Mã nguồn mở theo giấy phép MIT hoặc Apache-2.0.",
+  "Send a test notification": "Gửi thông báo thử",
+  "Also notify for mail sorted into groups": "Thông báo cả thư được xếp vào nhóm",
+  "Off: mail that rules or AI put into a group hidden from the inbox arrives quietly.": "Tắt: thư được quy tắc hoặc AI xếp vào nhóm ẩn khỏi Hộp thư đến sẽ đến lặng lẽ.",
+  "Sent. If nothing appeared, check Windows Settings → System → Notifications (Hermio on, Do not disturb off).": "Đã gửi. Nếu không thấy gì, hãy kiểm tra Cài đặt Windows → Hệ thống → Thông báo (bật Hermio, tắt Không làm phiền).",
 };

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 dist-zips/
 src-tauri/target/

@@ -179,6 +179,11 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
     let mut new_count = 0usize;
     let mut new_ids: Vec<i64> = vec![];
     let total = todo.len().min(MAX_PER_RUN);
+    let notify_grouped = crate::notify::include_grouped(state);
+    let mut to_notify: Vec<crate::notify::NewMail> = vec![];
+    let (mut quiet_rules, mut quiet_groups) = (0usize, 0usize);
+    // A large mailbox is downloaded over several runs: mail from that backlog isn't news.
+    let recent = chrono::Utc::now().timestamp() - 2 * 86_400;
     for (i, (n, uidl)) in todo.into_iter().take(MAX_PER_RUN).enumerate() {
         pop.rd.get_mut().write_all(format!("RETR {n}\r\n").as_bytes()).await?;
         let l = pop.line().await?;
@@ -206,11 +211,16 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
         let row = state.db.message(id)?;
         let f1 = crate::rules::apply(state, &rules, &row, None)?;
         let f2 = crate::rules::apply(state, &rules, &row, Some(m.body.as_deref().unwrap_or("")))?;
-        if !first_sync && !f1.mark_read && !f2.mark_read && !crate::commands::hidden_from_inbox(state, id) {
-            state.emit(
-                "new-mail",
-                serde_json::json!({ "account": a.email, "from": if m.from_name.is_empty() { &m.from_addr } else { &m.from_name }, "subject": m.subject }),
-            );
+        if !first_sync && m.date >= recent {
+            if f1.mark_read || f2.mark_read {
+                quiet_rules += 1;
+            } else if crate::commands::hidden_from_inbox(state, id) && !notify_grouped {
+                quiet_groups += 1;
+            } else {
+                let from = if m.from_name.is_empty() { m.from_addr.clone() } else { m.from_name.clone() };
+                state.emit("new-mail", serde_json::json!({ "account": a.email, "from": from, "subject": m.subject }));
+                to_notify.push(crate::notify::NewMail { from, subject: m.subject.clone() });
+            }
         }
         new_count += 1;
         if !a.pop3_leave_on_server {
@@ -222,6 +232,15 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
         }
     }
     let _ = pop.cmd("QUIT").await;
+    if !to_notify.is_empty() || quiet_rules + quiet_groups > 0 {
+        crate::sync::log(
+            state,
+            a,
+            "info",
+            format!("Inbox: notifying about {} new message(s); no notification for {quiet_groups} sorted into hidden groups, {quiet_rules} marked read by rules", to_notify.len()),
+        );
+    }
+    crate::notify::new_mail(state, &a.email, &to_notify);
     // Same matching as "Run all on existing mail" for everything that arrived.
     if let Err(e) = crate::rules::apply_new(&state.db, &new_ids) {
         eprintln!("rules: {e:#}");

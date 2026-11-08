@@ -22,6 +22,7 @@ mod rules;
 mod autoconfig;
 mod smtp;
 mod state;
+mod notify;
 mod sync;
 
 use std::sync::Arc;
@@ -112,6 +113,8 @@ fn main() {
             let migrated = backup::migrate_from_hermio(&dir);
             // A restore prepared in Backup & transfer is swapped in now, before the database opens.
             let restored = backup::apply_pending(&dir);
+            // Lets Windows show our toasts (also for the portable copy, which has no shortcut).
+            notify::register_app_id(&app.config().identifier, &dir);
             let db = db::Db::open(&dir).map_err(|e| format!("Could not open the database: {e:#}"))?;
             let state = Arc::new(state::AppState {
                 db: Arc::new(db),
@@ -121,7 +124,7 @@ fn main() {
             });
             app.manage(state.clone());
             if let Some(old) = migrated {
-                sync::log(&state, &models::Account { email: "Hermio".into(), ..Default::default() }, "info", format!("Moved your data from Nelo ({}) to Hermio", old.display()));
+                sync::log_plain(&state, "info", format!("Moved your data from Nelo ({}) to Hermio", old.display()));
             }
             if let Some(kept) = restored {
                 let _ = state.db.set_setting("restored_note", &serde_json::to_string(&kept).unwrap_or_default());
@@ -236,6 +239,7 @@ fn main() {
             commands::config_import,
             commands::sync_log_clear,
             commands::sync_log_open,
+            commands::test_notification,
             commands::schedule_send,
             commands::list_outbox,
             commands::cancel_outbox,

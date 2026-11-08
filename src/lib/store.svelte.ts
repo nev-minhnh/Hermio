@@ -15,6 +15,8 @@ export interface Settings {
   mark_read_delay: number; // seconds, -1 = never automatically
   remote_images: "ask" | "always" | "never";
   notifications: boolean;
+  /** Also notify for new mail that goes straight into a group hidden from the inbox. */
+  notify_groups: boolean;
   confirm_delete: boolean;
   search_mode: "subject" | "content" | "people";
   folder_pane_width: number;
@@ -51,6 +53,7 @@ export const defaults: Settings = {
   mark_read_delay: 1,
   remote_images: "ask",
   notifications: true,
+  notify_groups: false,
   confirm_delete: false,
   search_mode: "content",
   folder_pane_width: 248,

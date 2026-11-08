@@ -1,6 +1,7 @@
 <script lang="ts" module>
   // Outline icons on a 20×20 grid, stroked with currentColor (Fluent-like).
   export const ICONS: Record<string, string> = {
+    bell: "M10 3a4.5 4.5 0 0 0-4.5 4.5v3L4 13.5h12l-1.5-3v-3A4.5 4.5 0 0 0 10 3Z M8.2 16a1.9 1.9 0 0 0 3.6 0",
     copy: "M7 6.5V4.5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2 M4.5 6.5h7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z",
     sparkle: "M10 2.5l1.7 4.3 4.3 1.7-4.3 1.7L10 14.5l-1.7-4.3L4 8.5l4.3-1.7L10 2.5Z M15.5 13l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z",
     zoomIn: "M8.5 14.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z M13 13l4.5 4.5 M8.5 6v5 M6 8.5h5",

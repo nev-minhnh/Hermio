@@ -179,6 +179,14 @@
     await store.loadAccounts();
   }
 
+  async function testNotification() {
+    try {
+      await api.testNotification();
+      store.info(t("Sent. If nothing appeared, check Windows Settings → System → Notifications (Hermio on, Do not disturb off)."));
+    } catch (e) {
+      store.error(String(e));
+    }
+  }
   const accents = ["#1d4fe0", "#3d7bff", "#0a2a8f", "#5b5fc7", "#8764b8", "#c239b3", "#d13438", "#ca5010", "#107c10", "#038387"];
   const customAccent = $derived(!accents.includes(store.settings.accent));
 
@@ -511,9 +519,20 @@
               </div>
             </div>
           </div>
-          <button class="toggle" onclick={() => store.set("notifications", !store.settings.notifications)}>
-            <span class="switch" class:on={store.settings.notifications}></span>{t("Notify me of new mail")}
-          </button>
+          <div class="notif">
+            <div class="row">
+              <button class="toggle grow" onclick={() => store.set("notifications", !store.settings.notifications)}>
+                <span class="switch" class:on={store.settings.notifications}></span>{t("Notify me of new mail")}
+              </button>
+              <button class="btn subtle" onclick={testNotification} disabled={!store.settings.notifications}><Icon name="bell" size={15} />{t("Send a test notification")}</button>
+            </div>
+            {#if store.settings.notifications}
+              <button class="toggle sub" onclick={() => store.set("notify_groups", !store.settings.notify_groups)} transition:slide={{ duration: 180 }}>
+                <span class="switch" class:on={store.settings.notify_groups}></span>
+                <span>{t("Also notify for mail sorted into groups")}<br /><span class="muted small">{t("Off: mail that rules or AI put into a group hidden from the inbox arrives quietly.")}</span></span>
+              </button>
+            {/if}
+          </div>
           <label class="field">
             <span>{t("Undo send window: {n} seconds", { n: store.settings.send_delay })}</span>
             <div class="row">
@@ -919,6 +938,10 @@
     color: var(--text-accent);
     text-decoration: underline;
     font: inherit;
+  }
+  .notif .sub {
+    margin: 6px 0 0 52px;
+    align-items: flex-start;
   }
   .toggle {
     display: flex;

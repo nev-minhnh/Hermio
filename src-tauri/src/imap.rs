@@ -251,6 +251,9 @@ pub async fn sync_folder(state: &AppState, s: &mut ImapSession, a: &Account, fol
             max_uid = max_uid.max(top);
         }
         let n_new = fetches.len();
+        let notify_grouped = crate::notify::include_grouped(state);
+        let mut to_notify: Vec<crate::notify::NewMail> = vec![];
+        let (mut quiet_rules, mut quiet_groups) = (0usize, 0usize);
         for f in fetches {
             let Some(uid) = f.uid else { continue };
             if uid <= last_uid {
@@ -286,16 +289,38 @@ pub async fn sync_folder(state: &AppState, s: &mut ImapSession, a: &Account, fol
                 };
                 if fx.mark_read && !seen { to_seen.push(uid); }
                 if fx.flag && !flagged { to_flag.push(uid); }
-                if !seen && !fx.mark_read && last_uid != 0 && !crate::commands::hidden_from_inbox(state, id) {
-                    new_unread += 1;
-                    state.emit(
-                        "new-mail",
-                        serde_json::json!({ "account": a.email, "from": if m.from_name.is_empty() { &m.from_addr } else { &m.from_name }, "subject": m.subject }),
-                    );
+                // The first sync of a folder brings in old mail: nothing to announce.
+                if !seen && last_uid != 0 {
+                    if fx.mark_read {
+                        quiet_rules += 1;
+                    } else if crate::commands::hidden_from_inbox(state, id) && !notify_grouped {
+                        quiet_groups += 1;
+                    } else {
+                        new_unread += 1;
+                        let from = if m.from_name.is_empty() { m.from_addr.clone() } else { m.from_name.clone() };
+                        state.emit("new-mail", serde_json::json!({ "account": a.email, "from": from, "subject": m.subject }));
+                        to_notify.push(crate::notify::NewMail { from, subject: m.subject.clone() });
+                    }
                 }
             }
         }
 
+        if !to_notify.is_empty() || quiet_rules + quiet_groups > 0 {
+            let mut why = vec![];
+            if quiet_groups > 0 {
+                why.push(format!("{quiet_groups} sorted into hidden groups"));
+            }
+            if quiet_rules > 0 {
+                why.push(format!("{quiet_rules} marked read by rules"));
+            }
+            crate::sync::log(
+                state,
+                a,
+                "info",
+                format!("{}: notifying about {} new message(s){}", folder.name, to_notify.len(), if why.is_empty() { String::new() } else { format!(" (no notification for {})", why.join(", ")) }),
+            );
+        }
+        crate::notify::new_mail(state, &a.email, &to_notify);
         if inbox || n_new > 0 {
             crate::sync::log(
                 state,
