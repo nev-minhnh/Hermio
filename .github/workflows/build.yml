@@ -63,9 +63,30 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach zips to the release (tags v* / published releases)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Release notes from CHANGELOG
+        if: github.event_name != 'pull_request'
+        shell: python
+        run: |
+          import os
+          v = os.environ["VERSION"]
+          s = open("CHANGELOG.md", encoding="utf-8").read()
+          a = s.find(f"## {v}")
+          body = ""
+          if a >= 0:
+              b = s.find("\n## ", a + 3)
+              body = s[a:b if b > 0 else None].split("\n", 1)[1].strip()
+          body += f"\n\n**Downloads:** `Hermio-{v}-installer.zip` (per-user installer) or `Hermio-{v}-portable.zip`. Requires Windows 10/11 with WebView2."
+          open("release-notes.md", "w", encoding="utf-8").write(body)
+
+      # Every build of main publishes (or refreshes) the release for the version in package.json.
+      - name: Publish release v${{ env.VERSION }}
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Hermio ${{ env.VERSION }}
+          body_path: release-notes.md
           files: dist-zips/*.zip
           fail_on_unmatched_files: true
+          make_latest: true
