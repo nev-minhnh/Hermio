@@ -2,7 +2,7 @@
   import { slide, fade, scale } from "svelte/transition";
   import { flip } from "svelte/animate";
   import { t, locale } from "../lib/i18n.svelte";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import Icon from "../lib/Icon.svelte";
   import { store } from "../lib/store.svelte";
   import { api, type Outgoing, type MessageBody } from "../lib/api";
@@ -47,6 +47,18 @@
   let attachments = $state<{ path?: string; from_message?: [number, number]; name: string; size?: number }[]>([]);
   let sending = $state(false);
   let dirty = $state(false);
+  // ---- autosave to the Drafts folder ----
+  /** One key for all saved versions of this message (each save replaces the previous one). */
+  const draftKey: string = init.restore?.draft_key || (crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+  /** The draft to remove on the next save: the one this was opened from, then (POP3) the last autosave. */
+  let draftId: number | null = init.restore ? (init.restore.draft_id ?? null) : init.mode === "draft" ? (init.source?.id ?? null) : null;
+  let savedAccount: number | null = null;
+  let saveState = $state<"idle" | "saving" | "saved" | "error">("idle");
+  let savedAt = $state(0);
+  let saveError = $state("");
+  let lastSave = 0;
+  let autoTimer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
   let inReplyTo = "";
   let references = "";
   let sigId = $state<number | null>(null);
@@ -173,9 +185,63 @@
       references,
       attachments: attachments.map(({ path, from_message, name }) => ({ path, from_message, name })),
       reply_of: init.restore ? (init.restore.reply_of ?? null) : init.mode === "reply" || init.mode === "replyAll" ? (src?.id ?? null) : null,
-      draft_id: init.restore ? (init.restore.draft_id ?? null) : init.mode === "draft" ? (src?.id ?? null) : null,
+      draft_id: draftId,
+      draft_key: draftKey,
     };
   }
+
+  /** Something worth keeping: text, a subject, recipients or attachments. */
+  function hasContent() {
+    const text = (editorEl?.innerText ?? "").replace(/\s+/g, "");
+    return !!(subject.trim() || to.length || cc.length || bcc.length || attachments.length || text.length > 0);
+  }
+  /** Save a new version to the Drafts folder (replacing the previous one). */
+  async function autosave(force = false) {
+    clearTimeout(autoTimer);
+    if (closed && !force) return;
+    if (!dirty && !force) return;
+    if (!hasContent() || saveState === "saving") return;
+    const wait = 8000 - (Date.now() - lastSave);
+    if (!force && wait > 0) {
+      autoTimer = setTimeout(() => autosave(), wait);
+      return;
+    }
+    saveState = "saving";
+    dirty = false;
+    lastSave = Date.now();
+    const acc = accountId;
+    try {
+      // Moved to another mailbox: its versions in the previous one go.
+      if (savedAccount !== null && savedAccount !== acc) await api.discardDraft(savedAccount, draftKey, null).catch(() => {});
+      const r = await api.saveDraft(outgoing(), true);
+      savedAccount = acc;
+      draftId = r.local_id ?? null;
+      saveState = "saved";
+      savedAt = Date.now();
+      saveError = "";
+    } catch (e) {
+      saveState = "error";
+      saveError = String(e).replace(/^Error: /, "");
+      dirty = true;
+    }
+  }
+  function scheduleAutosave() {
+    dirty = true;
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(() => autosave(), 2500);
+  }
+  // Recipients, subject and attachments count as edits too.
+  let seenFields = "";
+  $effect(() => {
+    const f = JSON.stringify([to, cc, bcc, subject, attachments.length, accountId]);
+    if (seenFields && f !== seenFields) scheduleAutosave();
+    seenFields = f;
+  });
+  // Leaving the composer some other way (opening another email…): keep the latest version.
+  onDestroy(() => {
+    clearTimeout(autoTimer);
+    if (!closed && dirty && hasContent()) api.saveDraft(outgoing(), true).catch(() => {});
+  });
 
   function checks(): boolean {
     if (!to.length && !cc.length && !bcc.length) {
@@ -191,6 +257,8 @@
   /** Send goes through the undo window: the message waits in the corner for a few seconds. */
   function send() {
     if (!checks()) return;
+    closed = true;
+    clearTimeout(autoTimer);
     store.queueSend(outgoing());
     store.compose = null;
   }
@@ -228,7 +296,10 @@
     if (!checks()) return;
     sending = true;
     try {
-      await api.scheduleSend(outgoing(), Math.floor(when.getTime() / 1000));
+      await api.scheduleSend({ ...outgoing(), draft_key: "" }, Math.floor(when.getTime() / 1000));
+      closed = true;
+      clearTimeout(autoTimer);
+      if (savedAccount !== null || draftId) api.discardDraft(savedAccount ?? accountId, draftKey, draftId).catch(() => {});
       store.success(t("Scheduled for {time}", { time: when.toLocaleString(locale(), { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) }));
       store.compose = null;
       store.loadOutbox();
@@ -241,18 +312,47 @@
   }
 
   async function saveDraft(close = true) {
+    clearTimeout(autoTimer);
+    saveState = "saving";
+    // Closing: the editor goes away at once and the save finishes in the background.
+    const snapshot = close ? ($state.snapshot(outgoing()) as Outgoing) : null;
+    if (close) {
+      closed = true;
+      store.compose = null;
+      store.info(t("Saving draft…"));
+    }
     try {
-      await api.saveDraft(outgoing());
-      store.info(t("Draft saved"));
-      if (close) store.compose = null;
+      if (savedAccount !== null && savedAccount !== accountId) await api.discardDraft(savedAccount, draftKey, null).catch(() => {});
+      const r = await api.saveDraft(outgoing());
+      savedAccount = accountId;
+      draftId = r.local_id ?? null;
+      dirty = false;
+      saveState = "saved";
+      savedAt = Date.now();
+      store.success(t("Draft saved"));
     } catch (e) {
-      store.error(String(e));
+      saveState = "error";
+      saveError = String(e).replace(/^Error: /, "");
+      if (snapshot) store.toast("error", t("Couldn't save the draft: {err}", { err: saveError }), { label: t("Edit"), run: () => store.restoreCompose(snapshot) });
+      else store.error(t("Couldn't save the draft: {err}", { err: saveError }));
     }
   }
 
-  function discard() {
-    if (dirty && !confirm(t("Discard this message?"))) return;
+
+  async function discard() {
+    if ((dirty || savedAccount !== null) && hasContent() && !confirm(t("Discard this message?"))) return;
+    closed = true;
+    clearTimeout(autoTimer);
     store.compose = null;
+    // Its autosaved versions (and the draft it was opened from) go too.
+    if (savedAccount !== null || draftId) {
+      try {
+        await api.discardDraft(savedAccount ?? accountId, draftKey, draftId);
+        store.info(t("Draft discarded"));
+      } catch (e) {
+        store.error(t("Couldn't delete the saved draft: {err}", { err: String(e) }));
+      }
+    }
   }
 
   async function attach() {
@@ -272,7 +372,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="composer" onkeydown={onKey} oninput={() => (dirty = true)}>
+<div class="composer" onkeydown={onKey} oninput={scheduleAutosave}>
   <div class="bar">
     <div class="split">
       <button class="btn primary main" onclick={send} disabled={sending}>
@@ -324,7 +424,12 @@
       </select>
     </label>
     <span class="grow"></span>
-    <span class="muted small hint">{t("Ctrl+Enter to send")}</span>
+    <span class="save-state small" class:err={saveState === "error"} title={saveState === "error" ? saveError : t("Your message is saved to Drafts as you write")}>
+      {#if saveState === "saving"}<span class="spinner"></span>{t("Saving…")}
+      {:else if saveState === "saved"}<Icon name="check" size={13} />{t("Saved to Drafts {time}", { time: new Date(savedAt).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}
+      {:else if saveState === "error"}<Icon name="warning" size={13} />{t("Not saved")}
+      {:else}<span class="muted">{t("Ctrl+Enter to send")}</span>{/if}
+    </span>
     <button class="btn subtle" onclick={() => saveDraft(true)} title={t("Save draft (Ctrl+S)")}><Icon name="draft" size={16} />{t("Save draft")}</button>
     <button class="icon-btn" onclick={discard} title={t("Discard")}><Icon name="trash" /></button>
   </div>
@@ -361,7 +466,7 @@
     {/if}
 
     {#if initialHtml !== null}
-      <RichEditor html={initialHtml} bind:el={editorEl} placeholder={t("Write your message…")} minHeight={320} onchange={() => (dirty = true)} />
+      <RichEditor html={initialHtml} bind:el={editorEl} placeholder={t("Write your message…")} minHeight={320} onchange={scheduleAutosave} />
     {:else}
       <div class="muted" style="padding:16px 4px" out:fade={{ duration: 100 }}>{t("Preparing…")}</div>
     {/if}
@@ -396,6 +501,16 @@
     border-left: 1px solid color-mix(in srgb, #fff 35%, transparent);
     padding: 0 8px;
     min-width: 0;
+  }
+  .save-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  .save-state.err {
+    color: var(--danger);
   }
   .ai-wrap {
     position: relative;

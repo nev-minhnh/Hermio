@@ -134,8 +134,13 @@
   }
 
   // ---------- 2. analyse ----------
+  let again = false;
   async function check(all = true) {
-    if (busy) return;
+    if (busy) {
+      // Typing during a check: check the new text right after.
+      again = true;
+      return;
+    }
     units = collectUnits();
     error = "";
     do {
@@ -169,6 +174,10 @@
       units = collectUnits();
     } while (all);
     measure();
+    if (again) {
+      again = false;
+      if (store.settings.writing_auto) setTimeout(() => check(true), 300);
+    }
   }
   function stop() {
     stopCheck?.();
@@ -432,13 +441,26 @@
   }
 
   // ---------- wiring ----------
+  // While writing (new mail, reply, draft) the assistant keeps checking on its own: once the
+  // composer opens (a reply or a draft may already have text) and after each pause in typing.
+  let firstCheck: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const e = el;
     if (!e) return;
+    if (store.settings.writing_auto) {
+      clearTimeout(firstCheck);
+      firstCheck = setTimeout(() => units.length && check(true), 1200);
+    }
     e.addEventListener("input", onInput);
     e.addEventListener("keydown", onKey);
     e.addEventListener("dblclick", onDbl);
     units = collectUnits();
+    // Always on while writing: what's already there (an AI draft, a reply you started) is checked
+    // as soon as the composer opens; after that, each paragraph you change after a pause in typing.
+    if (store.settings.writing_auto) {
+      clearTimeout(typeTimer);
+      typeTimer = setTimeout(() => check(true), 1200);
+    }
     return () => {
       e.removeEventListener("input", onInput);
       e.removeEventListener("keydown", onKey);
@@ -457,6 +479,7 @@
     cancelAnimationFrame(raf);
     clearTimeout(typeTimer);
     clearTimeout(collectTimer);
+    clearTimeout(firstCheck);
     stopCheck?.();
     goStop?.();
   });
@@ -507,9 +530,9 @@
     </div>
     {#if s.issue.explanation}<div class="why small">{s.issue.explanation}</div>{/if}
     <div class="ib-acts">
-      {#if !card}<button class="btn sm primary" onclick={() => accept(s)}><Icon name="check" size={14} />{t("Accept")}</button>{/if}
-      <button class="btn sm" onclick={() => dismiss(s)}>{t("Dismiss")}</button>
-      {#if s.issue.cat === "correctness" && !/\s/.test(s.issue.original.trim())}<button class="btn sm" onclick={() => learn(s)}>{t("Add to dictionary")}</button>{/if}
+      <button class="btn sm primary" onclick={() => accept(s)}><Icon name="check" size={14} />{t("Accept")}</button>
+      <button class="btn sm" onclick={() => dismiss(s)}><Icon name="close" size={13} />{t("Dismiss")}</button>
+      <button class="btn sm" onclick={() => learn(s)}><Icon name="plus" size={13} />{t("Add to dictionary")}</button>
     </div>
   </div>
 {/snippet}

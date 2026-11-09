@@ -176,7 +176,13 @@
     } else {
       store.selected = [m.id];
       store.anchor = m.id;
+      openDraft(m);
     }
+  }
+
+  /** A draft opens straight in the editor, showing what was being written. */
+  function openDraft(m: Message) {
+    if (store.folderById(m.folder_id)?.role === "drafts") store.startCompose("draft", m);
   }
 
   const allSelected = $derived(store.messages.length > 0 && store.selected.length >= store.messages.length && store.messages.every((m) => store.selected.includes(m.id)));
@@ -259,6 +265,7 @@
         store.anchor = id;
       }
       store.compose = null;
+      if (!e.shiftKey) openDraft(msgs[i]);
       ensureVisible(id);
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();

@@ -69,9 +69,37 @@ pub fn log_clear() {
     LOG.lock().unwrap().clear();
 }
 
+/// Accounts asked to sync again while a sync of theirs was running.
+static AGAIN: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+
+/// Sync an account. If it is already syncing, it syncs once more when that finishes, so a change
+/// made meanwhile (a draft saved, mail moved) is never left out until the next interval.
 pub async fn sync_one(state: Arc<AppState>, account_id: i64) {
     let lock = state.lock_for(account_id);
-    let Ok(_guard) = lock.try_lock() else { return }; // already syncing
+    let Ok(guard) = lock.try_lock() else {
+        let mut q = AGAIN.lock().unwrap();
+        if !q.contains(&account_id) {
+            q.push(account_id);
+        }
+        return;
+    };
+    loop {
+        sync_once(&state, account_id).await;
+        let again = {
+            let mut q = AGAIN.lock().unwrap();
+            let had = q.contains(&account_id);
+            q.retain(|x| *x != account_id);
+            had
+        };
+        if !again {
+            break;
+        }
+    }
+    drop(guard);
+}
+
+async fn sync_once(state: &Arc<AppState>, account_id: i64) {
+    let state = state.clone();
     let Ok(a) = state.db.account(account_id) else { return };
     if !a.enabled {
         return;

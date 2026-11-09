@@ -164,6 +164,7 @@ function list(q: any): Message[] {
   else if (q.view.startsWith("ids:")) { const ids = q.view.slice(4).split(",").map(Number); r = r.filter((m) => ids.includes(m.id)); }
   else if (q.view === "unified:flagged") r = r.filter((m) => m.flagged);
   else if (q.view === "unified:unread") r = r.filter((m) => !m.seen);
+  else if (q.view === "unified:sent" || q.view === "unified:drafts") r = r.filter((m) => folders.find((f) => f.id === m.folder_id)?.role === q.view.slice(8));
   else if (q.view.startsWith("folder:")) r = r.filter((m) => m.folder_id === Number(q.view.slice(7)));
   else if (q.view.startsWith("account:")) r = r.filter((m) => m.account_id === Number(q.view.slice(8)));
   if (q.filter === "unread") r = r.filter((m) => !m.seen);
@@ -252,7 +253,7 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
       const acc: Record<string, number> = {};
       for (const m of inboxUnread) acc[m.account_id] = (acc[m.account_id] ?? 0) + 1;
       const sp = a.space ? inboxUnread.filter((m) => accounts.find((x) => x.id === m.account_id)?.space_id === a.space) : inboxUnread;
-      return { inbox: sp.length, flagged: messages.filter((m) => m.flagged).length, groups: g, accounts: acc };
+      return { inbox: sp.length, flagged: messages.filter((m) => m.flagged).length, drafts: messages.filter((m) => folders.find((f) => f.id === m.folder_id)?.role === "drafts").length, groups: g, accounts: acc };
     }
     case "list_spaces": return spaces;
     case "list_groups": return groups;
@@ -306,6 +307,8 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
     case "invite_respond": mockInvites[a.messageId] = a.action === "add" ? "added" : a.action; await new Promise((r) => setTimeout(r, 700)); return { event_id: 1, added: a.action !== "declined" && a.action !== "dismiss", already: false, replied: a.action !== "add" && a.action !== "dismiss", title: "Event", start_ts: Math.floor(Date.now() / 1000) + 86400, all_day: false, calendar: "Calendar" };
     case "reminder_skip": return null;
     case "set_unread_badge": return null;
+    case "save_draft": await new Promise((r) => setTimeout(r, 300)); return { local_id: null };
+    case "discard_draft": return null;
     case "ai_complete": {
       await new Promise((r) => setTimeout(r, 900));
       if (String(a.system).includes("numbered unit")) {

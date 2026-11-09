@@ -536,9 +536,9 @@
               </button>
             {/if}
             <div class="field badge-opt">
-              <span>{t("Notification layout")}<br /><span class="muted small">{t("“Send a test notification” shows both; pick the one that looks right on your PC.")}</span></span>
+              <span>{t("Notification layout")}<br /><span class="muted small">{t("“Send a test notification” shows all of them; pick the one that looks right on your PC.")}</span></span>
               <div class="segmented" use:pill>
-                <button class:on={store.settings.toast_layout !== 2} onclick={() => store.set("toast_layout", 1)}>{t("Layout 1")}</button>
+                <button class:on={store.settings.toast_layout !== 2} onclick={() => store.set("toast_layout", 3)}>{t("Layout 1")}</button>
                 <button class:on={store.settings.toast_layout === 2} onclick={() => store.set("toast_layout", 2)}>{t("Layout 2")}</button>
               </div>
             </div>

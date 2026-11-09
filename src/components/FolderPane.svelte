@@ -184,6 +184,13 @@
       <Icon name="flag" size={18} /><span class="name">{t("Flagged")}</span>
       {#if store.counts.flagged}<span class="badge muted" use:countUp={store.counts.flagged} transition:scale={{ duration: 160, start: 0.6 }}></span>{/if}
     </button>
+    <button class="node" class:on={store.view === "unified:sent" && !store.search} onclick={() => store.open("unified:sent")}>
+      <Icon name="send" size={18} /><span class="name">{t("Sent")}</span>
+    </button>
+    <button class="node" class:on={store.view === "unified:drafts" && !store.search} onclick={() => store.open("unified:drafts")}>
+      <Icon name="draft" size={18} /><span class="name">{t("Drafts")}</span>
+      {#if store.counts.drafts}<span class="badge muted" use:countUp={store.counts.drafts} transition:scale={{ duration: 160, start: 0.6 }}></span>{/if}
+    </button>
 
     {#if store.outbox.length}
       <button class="node" class:on={store.view === "outbox"} onclick={() => store.open("outbox")} transition:slide={{ duration: 160 }}>

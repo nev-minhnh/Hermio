@@ -247,6 +247,7 @@ fn main() {
             commands::test_notification,
             commands::reminder_skip,
             commands::set_unread_badge,
+            commands::discard_draft,
             commands::ai_complete,
             commands::translate_text,
             commands::define_word,

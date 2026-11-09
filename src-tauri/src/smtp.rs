@@ -17,6 +17,9 @@ fn mailbox(s: &str) -> Result<Mailbox> {
 }
 
 /// Build the RFC 5322 message. Returns (lettre message, raw bytes).
+/// Header carrying [`Outgoing::draft_key`].
+pub const DRAFT_HEADER: &str = "X-Hermio-Draft";
+
 pub fn build(a: &Account, o: &Outgoing) -> Result<(Message, Vec<u8>)> {
     let from_name = if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() };
     let from: Mailbox = format!("{} <{}>", from_name.replace(['<', '>', '"'], ""), a.email)
@@ -38,6 +41,10 @@ pub fn build(a: &Account, o: &Outgoing) -> Result<(Message, Vec<u8>)> {
     }
     if !o.references.is_empty() {
         b = b.references(o.references.clone());
+    }
+    if !o.draft_key.is_empty() && o.draft_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        use lettre::message::header::{HeaderName, HeaderValue};
+        b = b.raw_header(HeaderValue::new(HeaderName::new_from_ascii_str(DRAFT_HEADER), o.draft_key.clone()));
     }
     let html = format!(
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"font-family:'Segoe UI',Arial,sans-serif;font-size:14px\">{}</body></html>",

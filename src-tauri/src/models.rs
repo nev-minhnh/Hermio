@@ -277,4 +277,8 @@ pub struct Outgoing {
     /// Existing draft to delete after sending/saving
     #[serde(default)]
     pub draft_id: Option<i64>,
+    /// Identifies one message being written across its autosaved versions (X-Hermio-Draft):
+    /// each save replaces the previous version; sending or discarding removes them all.
+    #[serde(default)]
+    pub draft_key: String,
 }

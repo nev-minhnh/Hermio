@@ -592,6 +592,73 @@ pub async fn expunge(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Resu
     Ok(())
 }
 
+/// The copies of one draft (`X-Hermio-Draft: key`) in `folder`: deletes them all, or all but the
+/// newest (`keep_newest`, right after saving a new version). Returns the UIDs deleted.
+async fn prune_drafts(state: &AppState, s: &mut ImapSession, folder: &Folder, key: &str, keep_newest: bool) -> Result<Vec<u32>> {
+    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Ok(vec![]);
+    }
+    s.select(&folder.path).await?;
+    let mut uids: Vec<u32> = s.uid_search(format!("HEADER {} {key}", crate::smtp::DRAFT_HEADER)).await?.into_iter().collect();
+    uids.sort_unstable();
+    if keep_newest {
+        uids.pop();
+    }
+    if uids.is_empty() {
+        return Ok(vec![]);
+    }
+    let set = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+    let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
+    let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
+    let _ = state.db.delete_by_uids(folder.id, &uids);
+    Ok(uids)
+}
+
+/// Save a new version of a draft, remove its older versions (and `replaces`, the draft it was
+/// opened from) and bring the Drafts folder up to date, all over one connection, so the new
+/// version is in the list as soon as this returns.
+pub async fn save_draft(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], key: &str, replaces: Option<MessageRow>) -> Result<()> {
+    let mut s = connect(state, a).await?;
+    s.append(&folder.path, Some("(\\Seen \\Draft)"), None, raw).await?;
+    prune_drafts(state, &mut s, folder, key, true).await?;
+    if let Some(m) = replaces.filter(|m| m.uid > 0) {
+        let f = state.db.folder(m.folder_id)?;
+        s.select(&f.path).await?;
+        let set = m.uid.to_string();
+        let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
+        let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
+        let _ = state.db.delete_messages(&[m.id]);
+    }
+    let fresh = state.db.folder(folder.id)?;
+    sync_folder(state, &mut s, a, &fresh).await?;
+    let _ = s.logout().await;
+    Ok(())
+}
+
+/// Bring a few folders up to date right away (after sending, moving…), without waiting for the
+/// account's full sync.
+pub async fn refresh_folders(state: &AppState, a: &Account, folder_ids: &[i64]) -> Result<()> {
+    if folder_ids.is_empty() {
+        return Ok(());
+    }
+    let mut s = connect(state, a).await?;
+    for id in folder_ids {
+        let f = state.db.folder(*id)?;
+        sync_folder(state, &mut s, a, &f).await?;
+    }
+    let _ = s.logout().await;
+    state.changed(a.id);
+    Ok(())
+}
+
+/// Remove every saved version of a draft (it was sent or discarded).
+pub async fn delete_drafts(state: &AppState, a: &Account, folder: &Folder, key: &str) -> Result<()> {
+    let mut s = connect(state, a).await?;
+    prune_drafts(state, &mut s, folder, key, false).await?;
+    let _ = s.logout().await;
+    Ok(())
+}
+
 pub async fn append(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], flags: &str) -> Result<()> {
     let mut s = connect(state, a).await?;
     s.append(&folder.path, Some(flags), None, raw).await?;

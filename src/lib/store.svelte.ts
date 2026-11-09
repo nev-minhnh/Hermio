@@ -43,7 +43,7 @@ export interface Settings {
   /** The navigation rail (Mail / Calendar / Settings) is hidden behind a line at the left edge. */
   rail_collapsed: boolean;
   /** New-mail notification layout (two ways Windows can draw it; see "Send a test notification"). */
-  toast_layout: 1 | 2;
+  toast_layout: 1 | 2 | 3;
   // ---- writing assistant (composer) and Ask AI / Translate / Meaning popup ----
   /** Check as you type (every check is a request to the provider). */
   writing_auto: boolean;
@@ -103,7 +103,7 @@ export const defaults: Settings = {
   notifications: true,
   notify_groups: false,
   reminders: true,
-  writing_auto: false,
+  writing_auto: true,
   writing_delay_ms: 1500,
   writing_goals: { ...DEFAULT_GOALS },
   writing_dictionary: [],
@@ -115,7 +115,7 @@ export const defaults: Settings = {
   translate_engine: "google",
   translate_to: "auto",
   define_on_dblclick: true,
-  toast_layout: 1,
+  toast_layout: 3,
   rail_collapsed: false,
   taskbar_badge: "count",
   confirm_delete: false,
@@ -181,7 +181,7 @@ class Store {
   accounts = $state<Account[]>([]);
   folders = $state<Folder[]>([]);
   signatures = $state<Signature[]>([]);
-  counts = $state<{ inbox: number; flagged: number; groups: Record<string, { total: number; unread: number }>; accounts: Record<string, number> }>({ inbox: 0, flagged: 0, groups: {}, accounts: {} });
+  counts = $state<{ inbox: number; flagged: number; drafts?: number; groups: Record<string, { total: number; unread: number }>; accounts: Record<string, number> }>({ inbox: 0, flagged: 0, groups: {}, accounts: {} });
   spaces = $state<Space[]>([]);
   groups = $state<Group[]>([]);
   aiOpen = $state(false);
@@ -270,6 +270,8 @@ class Store {
       case "unified:inbox": return t("All inboxes");
       case "unified:flagged": return t("Flagged");
       case "unified:unread": return t("Unread");
+      case "unified:sent": return t("Sent");
+      case "unified:drafts": return t("Drafts");
       case "outbox": return t("Scheduled");
       case "suggestions": return t("AI suggestions");
     }
@@ -819,9 +821,9 @@ export const store = new Store();
 
 // ---------- every backend call: progress bar + failure popups ----------
 // Calls with their own progress/streaming UI, or that run in the background, stay silent.
-const QUIET = /^(ai_(run|chat|chats|suggestions|suggest_queue|providers|skills|models)$|npu_(available|info|status|catalog|dirs|pull|install|cancel_pull)$|sync_log|notification_pending|invite_info|get_message|list_messages|list_folders|list_events|list_calendars|unread|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|set_setting|get_autostart|web_config|google_config|data_dir|guess_settings|discover_account)/;
+const QUIET = /^(ai_complete|translate_text|define_word|set_unread_badge|ai_(run|chat|chats|suggestions|suggest_queue|providers|skills|models)$|npu_(available|info|status|catalog|dirs|pull|install|cancel_pull)$|sync_log|notification_pending|invite_info|get_message|list_messages|list_folders|list_events|list_calendars|unread|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|set_setting|get_autostart|web_config|google_config|data_dir|guess_settings|discover_account)/;
 // Failures of these are reported where they happen (inline), or are background reads.
-const NO_POPUP = /^(list_|get_|ai_(run|test|chat|chats|suggestions|suggest_queue|providers|skills|models|read_file|read_bytes|cancel)$|npu_|sync_log|notification_|invite_info|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|unread|web_test|test_account|guess_settings|discover_account|google_config|web_config|data_dir)/;
+const NO_POPUP = /^(list_|get_|ai_complete|translate_text|define_word|set_unread_badge|ai_(run|test|chat|chats|suggestions|suggest_queue|providers|skills|models|read_file|read_bytes|cancel)$|npu_|sync_log|notification_|invite_info|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|unread|web_test|test_account|guess_settings|discover_account|google_config|web_config|data_dir)/;
 let seq = 0;
 const timers = new Map<number, ReturnType<typeof setTimeout> | "shown">();
 setInvokeHooks({

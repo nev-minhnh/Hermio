@@ -210,6 +210,8 @@ export interface Outgoing {
   attachments: { path?: string; from_message?: [number, number]; name: string }[];
   reply_of?: number | null;
   draft_id?: number | null;
+  /** Autosave: one key per message being written (its saved versions replace each other). */
+  draft_key?: string;
 }
 
 export interface ListQuery {
@@ -358,7 +360,8 @@ export const api = {
   openAttachment: (id: number, index: number) => invoke<void>("open_attachment", { id, index }),
   contacts: (prefix: string) => invoke<{ addr: string; name: string }[]>("suggest_contacts", { prefix }),
   send: (message: Outgoing) => invoke<void>("send_mail", { message }),
-  saveDraft: (message: Outgoing) => invoke<void>("save_draft", { message }),
+  saveDraft: (message: Outgoing, quiet = false) => invoke<{ local_id: number | null }>("save_draft", { message, quiet }),
+  discardDraft: (accountId: number, draftKey: string, draftId: number | null) => invoke<void>("discard_draft", { accountId, draftKey, draftId }),
   signatures: () => invoke<Signature[]>("list_signatures"),
   saveSignature: (signature: Signature) => invoke<number>("save_signature", { signature }),
   deleteSignature: (id: number) => invoke<void>("delete_signature", { id }),

@@ -476,6 +476,17 @@ impl Db {
     // ---------- messages ----------
     pub fn insert_message(&self, m: &NewMessage) -> Result<i64> {
         self.with(|c| {
+            // A folder can be synced by two tasks at once (a quick refresh after saving a draft
+            // and the regular sync): the same IMAP message is stored once.
+            if m.uid > 0 {
+                use rusqlite::OptionalExtension;
+                let had: Option<i64> = c
+                    .query_row("SELECT id FROM messages WHERE folder_id=?1 AND uid=?2", params![m.folder_id, m.uid], |r| r.get(0))
+                    .optional()?;
+                if let Some(id) = had {
+                    return Ok(id);
+                }
+            }
             c.execute(
                 "INSERT INTO messages(account_id,folder_id,uid,remote_key,message_id,in_reply_to,subject,from_name,from_addr,
                    to_list,cc_list,date,snippet,seen,flagged,answered,has_attachments,size,raw_path,body_indexed)
@@ -503,6 +514,23 @@ impl Db {
             c.execute("UPDATE messages_fts SET body=?2 WHERE rowid=?1", params![id, body])
         })?;
         Ok(())
+    }
+    /// Index rows of messages removed from a folder on the server.
+    pub fn delete_by_uids(&self, folder_id: i64, uids: &[u32]) -> Result<()> {
+        let ids: Vec<i64> = self.with(|c| {
+            let mut st = c.prepare("SELECT id FROM messages WHERE folder_id=?1 AND uid=?2")?;
+            let mut out = vec![];
+            for u in uids {
+                if let Ok(id) = st.query_row(params![folder_id, *u as i64], |r| r.get(0)) {
+                    out.push(id);
+                }
+            }
+            Ok(out)
+        })?;
+        if ids.is_empty() {
+            return Ok(());
+        }
+        self.delete_messages(&ids)
     }
     pub fn delete_messages(&self, ids: &[i64]) -> Result<()> {
         self.with(|c| {
@@ -613,6 +641,8 @@ impl Db {
             "unified:inbox" => where_.push("m.folder_id IN (SELECT id FROM folders WHERE role='inbox')".into()),
             "unified:flagged" => where_.push("m.flagged=1 AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('trash','junk','all'))".into()),
             "unified:unread" => where_.push("m.seen=0 AND m.folder_id IN (SELECT id FROM folders WHERE role='inbox')".into()),
+            "unified:sent" => where_.push("m.folder_id IN (SELECT id FROM folders WHERE role='sent')".into()),
+            "unified:drafts" => where_.push("m.folder_id IN (SELECT id FROM folders WHERE role='drafts')".into()),
             "all" => where_.push("m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('all'))".into()),
             v => {
                 if let Some(list) = v.strip_prefix("ids:") {
@@ -696,7 +726,10 @@ impl Db {
             let flagged: i64 = c.query_row(
                 "SELECT COUNT(*) FROM messages WHERE flagged=1 AND folder_id NOT IN (SELECT id FROM folders WHERE role IN ('trash','junk','all'))",
                 [], |r| r.get(0))?;
-            Ok(serde_json::json!({ "inbox": unified, "flagged": flagged, "groups": groups, "accounts": accs }))
+            let drafts: i64 = c.query_row(
+                &format!("SELECT COUNT(*) FROM messages WHERE folder_id IN (SELECT id FROM folders WHERE role='drafts'){sp}"),
+                [], |r| r.get(0))?;
+            Ok(serde_json::json!({ "inbox": unified, "flagged": flagged, "drafts": drafts, "groups": groups, "accounts": accs }))
         })
     }
 

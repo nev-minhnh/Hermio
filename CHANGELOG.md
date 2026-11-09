@@ -3,6 +3,16 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.1
+
+- Drafts save as you write: every change is stored in the mailbox's Drafts folder a few seconds after you stop typing (one copy per message — older versions are replaced). The composer shows "Saving…" / "Saved to Drafts".
+- Saving a draft is faster and the Drafts folder updates right away (the save and the folder refresh share one connection); "Save draft" closes the editor immediately.
+- Folders refresh on their own after sending, moving or saving: Sent, Drafts and the destination folder are brought up to date at once, and a sync requested while another is running is no longer dropped.
+- Opening a draft shows the editor with what you were writing, instead of a "Continue editing" button.
+- Favorites: unified Sent and Drafts across all signed-in mailboxes.
+- Writing assistant checks continuously while you write or reply (also right when a reply or draft opens); the hover card always offers Accept / Dismiss / Add to dictionary.
+- New-mail notifications: no more empty band at the top (the invisible-title layout was removed).
+
 ## 0.7.0 — Writing assistant
 
 Themisio's Grammarly-style assistant, in the composer:

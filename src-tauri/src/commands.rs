@@ -428,7 +428,11 @@ fn move_impl(state: &Arc<AppState>, ids: &[i64], folder_id: Option<i64>, role: O
             state.db.delete_messages(&ids)?;
             let st = state.clone();
             let msgs2 = msgs.clone();
-            background(state.clone(), aid, async move { imap::move_to(&st, &a, &msgs2, &dest).await });
+            background(state.clone(), aid, async move {
+                imap::move_to(&st, &a, &msgs2, &dest).await?;
+                // The destination shows the moved mail right away.
+                imap::refresh_folders(&st, &a, &[dest.id]).await
+            });
         }
         state.changed(aid);
     }
@@ -579,6 +583,8 @@ pub async fn send_mail(state: S<'_>, message: Outgoing) -> R<()> {
 /// Send one message: SMTP, contacts, answered flag, Sent copy, draft cleanup, quick resync.
 pub async fn send_outgoing(st: &Arc<AppState>, mut message: Outgoing) -> Result<()> {
     let st = st.clone();
+    // The autosave key isn't part of the sent mail; its saved versions are removed below.
+    let draft_key = std::mem::take(&mut message.draft_key);
     let a = st.db.account(message.account_id)?;
     resolve_attachments(&st, &mut message).await?;
     let (msg, raw) = smtp::build(&a, &message)?;
@@ -611,11 +617,23 @@ pub async fn send_outgoing(st: &Arc<AppState>, mut message: Outgoing) -> Result<
     if let Some(d) = message.draft_id {
         remove_draft(&st, d).await;
     }
+    if !draft_key.is_empty() && a.protocol == "imap" {
+        if let Ok(Some(drafts)) = st.db.folder_by_role(a.id, "drafts") {
+            let _ = imap::delete_drafts(&st, &a, &drafts, &draft_key).await;
+        }
+    }
     st.changed(a.id);
     let st2 = st.clone();
     let aid = a.id;
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        // Sent (and Drafts) first, so they show the change within seconds; then the rest.
+        if a.protocol == "imap" {
+            if a.provider == "google" {
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+            }
+            let ids: Vec<i64> = ["sent", "drafts"].iter().filter_map(|r| st2.db.folder_by_role(aid, r).ok().flatten()).map(|f| f.id).collect();
+            let _ = imap::refresh_folders(&st2, &a, &ids).await;
+        }
         sync::sync_one(st2, aid).await
     });
     Ok(())
@@ -788,25 +806,64 @@ pub async fn attachment_data(state: S<'_>, id: i64, index: usize) -> R<Attachmen
     Ok(AttachmentData { size: data.len(), data: base64::engine::general_purpose::STANDARD.encode(&data), name, mime, text })
 }
 
+#[derive(Serialize)]
+pub struct DraftSaved {
+    /// The saved copy's index id when it is known right away (POP3 / local drafts); IMAP drafts
+    /// are found again by their draft key.
+    local_id: Option<i64>,
+}
+
+/// Save (or autosave) a draft. With a draft key, the new version replaces the previous ones.
 #[tauri::command]
-pub async fn save_draft(state: S<'_>, mut message: Outgoing) -> R<()> {
+pub async fn save_draft(state: S<'_>, mut message: Outgoing, quiet: Option<bool>) -> R<DraftSaved> {
     let st = state.inner().clone();
     let a = st.db.account(message.account_id).map_err(ea)?;
     resolve_attachments(&st, &mut message).await.map_err(ea)?;
     // Drafts may have no recipient yet.
     let (_, raw) = smtp::build(&a, &message).map_err(ea)?;
+    let _ = quiet;
+    let mut local_id = None;
+    // The draft this one was opened from (or the previous local version) is replaced.
+    let old = message.draft_id.and_then(|d| st.db.message(d).ok());
     if a.protocol == "pop3" {
-        pop3::store_local(&st, &a, "drafts", &raw, true).map_err(ea)?;
+        local_id = Some(pop3::store_local(&st, &a, "drafts", &raw, true).map_err(ea)?);
+        if let Some(d) = message.draft_id {
+            remove_draft(&st, d).await;
+        }
     } else {
         let drafts = st.db.folder_by_role(a.id, "drafts").map_err(ea)?.ok_or("This account has no Drafts folder")?;
-        imap::append(&st, &a, &drafts, &raw, "(\\Seen \\Draft)").await.map_err(ea)?;
+        // Same mailbox: replaced over the same connection; otherwise removed separately.
+        let (same, other) = match old {
+            Some(m) if m.account_id == a.id => (Some(m), None),
+            Some(m) => (None, Some(m.id)),
+            None => (None, None),
+        };
+        imap::save_draft(&st, &a, &drafts, &raw, &message.draft_key, same).await.map_err(ea)?;
+        if let Some(d) = other {
+            remove_draft(&st, d).await;
+        }
     }
-    if let Some(d) = message.draft_id {
+    // The Drafts folder is already up to date: the list shows the new version now.
+    st.changed(a.id);
+    Ok(DraftSaved { local_id })
+}
+
+/// Throw away a message being written: every autosaved version of it (and the draft it was
+/// opened from, if any).
+#[tauri::command]
+pub async fn discard_draft(state: S<'_>, account_id: i64, draft_key: String, draft_id: Option<i64>) -> R<()> {
+    let st = state.inner().clone();
+    if let Some(d) = draft_id {
         remove_draft(&st, d).await;
     }
-    st.changed(a.id);
-    let aid = a.id;
-    tauri::async_runtime::spawn(async move { sync::sync_one(st, aid).await });
+    if let Ok(a) = st.db.account(account_id) {
+        if a.protocol == "imap" && !draft_key.is_empty() {
+            if let Ok(Some(drafts)) = st.db.folder_by_role(a.id, "drafts") {
+                imap::delete_drafts(&st, &a, &drafts, &draft_key).await.map_err(ea)?;
+            }
+        }
+        st.changed(a.id);
+    }
     Ok(())
 }
 
