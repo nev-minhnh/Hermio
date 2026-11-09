@@ -211,6 +211,20 @@ class Store {
   selected = $state<number[]>([]);
   anchor = $state<number | null>(null);
   compose = $state<ComposeInit | null>(null);
+  /** The saved version of the message being written (its row in Drafts), if any. */
+  composeDraftId = $state<number | null>(null);
+  /** Key of a composer closed because its draft was deleted: it must not save again. */
+  composeKilled = 0;
+  /** Deleting or moving the draft that is open in the editor closes the editor without saving. */
+  private closeComposeFor(ids: number[]) {
+    const c = this.compose;
+    if (!c) return;
+    if ((c.source && c.mode === "draft" && ids.includes(c.source.id)) || (this.composeDraftId !== null && ids.includes(this.composeDraftId))) {
+      this.composeKilled = c.key;
+      this.compose = null;
+      this.composeDraftId = null;
+    }
+  }
   syncing = $state<Record<number, boolean>>({});
   errors = $state<Record<number, string>>({});
   toasts = $state<Toast[]>([]);
@@ -713,6 +727,7 @@ class Store {
     if (this.settings.confirm_delete || permanent) {
       if (!confirm(permanent ? t("Permanently delete {n} messages?", { n: ids.length }) : t("Delete {n} messages?", { n: ids.length }))) return;
     }
+    this.closeComposeFor(ids);
     this.dropRows(ids);
     try {
       await api.remove(ids, permanent);
@@ -724,6 +739,7 @@ class Store {
   }
   async archive(ids: number[]) {
     if (!ids.length) return;
+    this.closeComposeFor(ids);
     this.dropRows(ids);
     try {
       await api.archive(ids);
@@ -735,6 +751,7 @@ class Store {
   }
   async spam(ids: number[]) {
     if (!ids.length) return;
+    this.closeComposeFor(ids);
     this.dropRows(ids);
     try {
       await api.spam(ids);
@@ -746,6 +763,7 @@ class Store {
   }
   async moveTo(ids: number[], folderId: number) {
     if (!ids.length) return;
+    this.closeComposeFor(ids);
     const f = this.folderById(folderId);
     this.dropRows(ids);
     try {

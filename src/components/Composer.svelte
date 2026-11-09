@@ -105,6 +105,7 @@
       attachments = r.attachments.map((a) => ({ ...a }));
       initialHtml = r.html;
       dirty = true;
+      finishLoading();
       return;
     }
     const me = (id: number) => (store.accountById(id)?.email ?? "").toLowerCase();
@@ -153,6 +154,7 @@
     } else {
       initialHtml = `${aiHtml()}${sigHtml(sigId)}`;
     }
+    finishLoading();
   });
 
   /** AI-drafted text (human-in-the-loop: it lands in the editor for review, never sent directly). */
@@ -216,6 +218,11 @@
       const r = await api.saveDraft(outgoing(), true);
       savedAccount = acc;
       draftId = r.local_id ?? null;
+      // Deleted while this save was on its way: take the version just saved away too.
+      if (killed()) {
+        api.discardDraft(acc, draftKey, draftId).catch(() => {});
+        return;
+      }
       saveState = "saved";
       savedAt = Date.now();
       saveError = "";
@@ -231,15 +238,33 @@
     autoTimer = setTimeout(() => autosave(), 2500);
   }
   // Recipients, subject and attachments count as edits too.
+  // Filling the fields when the editor opens (a reply's recipients, a draft's subject) is not an
+  // edit: only changes after that are saved, so just opening a reply or a draft saves nothing.
   let seenFields = "";
+  let loaded = false;
+  const fields = () => JSON.stringify([to, cc, bcc, subject, attachments.length, accountId]);
   $effect(() => {
-    const f = JSON.stringify([to, cc, bcc, subject, attachments.length, accountId]);
-    if (seenFields && f !== seenFields) scheduleAutosave();
-    seenFields = f;
+    const f = fields();
+    if (loaded && f !== seenFields) scheduleAutosave();
+    if (loaded) seenFields = f;
   });
+  function finishLoading() {
+    seenFields = fields();
+    loaded = true;
+  }
   // Leaving the composer some other way (opening another email…): keep the latest version.
+  // Keep the store told which row in Drafts is this message (deleting it closes the editor).
+  $effect(() => {
+    store.composeDraftId = draftId;
+  });
+  /** The draft was deleted from the list while open: nothing more may be saved. */
+  const killed = () => store.composeKilled === init.key;
   onDestroy(() => {
     clearTimeout(autoTimer);
+    if (killed()) {
+      closed = true;
+      return;
+    }
     if (!closed && dirty && hasContent()) api.saveDraft(outgoing(), true).catch(() => {});
   });
 

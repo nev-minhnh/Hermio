@@ -160,7 +160,8 @@
   });
 
   function select(e: MouseEvent, m: Message, index: number) {
-    store.compose = null;
+    // Clicking the draft already open in the editor keeps the editor as it is.
+    if (!(store.compose && m.id === store.composeDraftId)) store.compose = null;
     if (store.checkMode && !e.shiftKey) {
       store.selected = store.selected.includes(m.id) ? store.selected.filter((x) => x !== m.id) : [...store.selected, m.id];
       store.anchor = m.id;
@@ -182,6 +183,7 @@
 
   /** A draft opens straight in the editor, showing what was being written. */
   function openDraft(m: Message) {
+    if (store.compose && m.id === store.composeDraftId) return;
     if (store.folderById(m.folder_id)?.role === "drafts") store.startCompose("draft", m);
   }
 

@@ -541,6 +541,10 @@ impl Db {
             Ok(())
         })
     }
+    pub fn message_id_by_uid(&self, folder_id: i64, uid: i64) -> Result<Option<i64>> {
+        use rusqlite::OptionalExtension;
+        Ok(self.with(|c| c.query_row("SELECT id FROM messages WHERE folder_id=?1 AND uid=?2", params![folder_id, uid], |r| r.get(0)).optional())?)
+    }
     pub fn message(&self, id: i64) -> Result<MessageRow> {
         self.with(|c| c.query_row(&format!("SELECT {MSG_COLS} FROM messages m WHERE m.id=?1"), [id], msg_from_row))
     }

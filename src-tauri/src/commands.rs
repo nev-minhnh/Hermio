@@ -567,7 +567,7 @@ async fn remove_draft(state: &Arc<AppState>, draft_id: i64) {
         if let Ok(a) = state.db.account(m.account_id) {
             let _ = state.db.delete_messages(&[draft_id]);
             if a.protocol == "imap" {
-                let _ = imap::expunge(state, &a, &[m]).await;
+                let _ = imap::drop_messages(state, &a, &[m]).await;
             } else if !m.raw_path.is_empty() {
                 let _ = std::fs::remove_file(&m.raw_path);
             }
@@ -822,7 +822,7 @@ pub async fn save_draft(state: S<'_>, mut message: Outgoing, quiet: Option<bool>
     // Drafts may have no recipient yet.
     let (_, raw) = smtp::build(&a, &message).map_err(ea)?;
     let _ = quiet;
-    let mut local_id = None;
+    let local_id;
     // The draft this one was opened from (or the previous local version) is replaced.
     let old = message.draft_id.and_then(|d| st.db.message(d).ok());
     if a.protocol == "pop3" {
@@ -838,7 +838,7 @@ pub async fn save_draft(state: S<'_>, mut message: Outgoing, quiet: Option<bool>
             Some(m) => (None, Some(m.id)),
             None => (None, None),
         };
-        imap::save_draft(&st, &a, &drafts, &raw, &message.draft_key, same).await.map_err(ea)?;
+        local_id = imap::save_draft(&st, &a, &drafts, &raw, &message.draft_key, same).await.map_err(ea)?;
         if let Some(d) = other {
             remove_draft(&st, d).await;
         }

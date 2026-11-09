@@ -3,6 +3,12 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.2
+
+- Deleting a draft works reliably: opening a draft (or a reply) no longer saves a new copy by itself — previously the copy replaced the draft seconds after it was opened, so the one being deleted was already gone and the copy stayed. Deleting or moving the draft that is open in the editor now closes the editor without saving it again.
+- Gmail: replaced draft versions go to Trash and are purged, instead of piling up in All Mail (on Gmail an IMAP expunge only removes the label).
+- Clicking the draft already open in the editor keeps the editor as it is.
+
 ## 0.7.1
 
 - Drafts save as you write: every change is stored in the mailbox's Drafts folder a few seconds after you stop typing (one copy per message — older versions are replaced). The composer shows "Saving…" / "Saved to Drafts".

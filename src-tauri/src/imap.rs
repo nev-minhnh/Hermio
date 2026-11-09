@@ -592,47 +592,76 @@ pub async fn expunge(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Resu
     Ok(())
 }
 
+fn valid_key(key: &str) -> bool {
+    !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// Remove messages from `folder` (already selected) for good. On Gmail an expunge only removes
+/// the label and the copy stays in All Mail, so draft versions would pile up there: they are
+/// moved to Trash instead, and copies of a Hermio draft (`key`) are purged from Trash too.
+async fn drop_uids(state: &AppState, s: &mut ImapSession, a: &Account, folder: &Folder, set: &str, key: &str) -> Result<()> {
+    let trash = if a.provider == "google" { state.db.folder_by_role(a.id, "trash")?.filter(|t| t.id != folder.id) } else { None };
+    match trash {
+        Some(t) => {
+            s.uid_mv(set, &t.path).await?;
+            if valid_key(key) {
+                s.select(&t.path).await?;
+                let uids: Vec<u32> = s.uid_search(format!("HEADER {} {key}", crate::smtp::DRAFT_HEADER)).await?.into_iter().collect();
+                if !uids.is_empty() {
+                    let set = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+                    let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
+                    let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
+                }
+                s.select(&folder.path).await?;
+            }
+        }
+        None => {
+            let _: Vec<_> = s.uid_store(set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
+            let _: Vec<_> = s.uid_expunge(set).await?.try_collect().await?;
+        }
+    }
+    Ok(())
+}
+
 /// The copies of one draft (`X-Hermio-Draft: key`) in `folder`: deletes them all, or all but the
-/// newest (`keep_newest`, right after saving a new version). Returns the UIDs deleted.
-async fn prune_drafts(state: &AppState, s: &mut ImapSession, folder: &Folder, key: &str, keep_newest: bool) -> Result<Vec<u32>> {
-    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Ok(vec![]);
+/// newest (`keep_newest`, right after saving a new version). Returns the newest UID kept.
+async fn prune_drafts(state: &AppState, s: &mut ImapSession, a: &Account, folder: &Folder, key: &str, keep_newest: bool) -> Result<Option<u32>> {
+    if !valid_key(key) {
+        return Ok(None);
     }
     s.select(&folder.path).await?;
     let mut uids: Vec<u32> = s.uid_search(format!("HEADER {} {key}", crate::smtp::DRAFT_HEADER)).await?.into_iter().collect();
     uids.sort_unstable();
-    if keep_newest {
-        uids.pop();
+    let kept = if keep_newest { uids.pop() } else { None };
+    if !uids.is_empty() {
+        let set = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+        drop_uids(state, s, a, folder, &set, key).await?;
+        let _ = state.db.delete_by_uids(folder.id, &uids);
     }
-    if uids.is_empty() {
-        return Ok(vec![]);
-    }
-    let set = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
-    let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
-    let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
-    let _ = state.db.delete_by_uids(folder.id, &uids);
-    Ok(uids)
+    Ok(kept)
 }
 
 /// Save a new version of a draft, remove its older versions (and `replaces`, the draft it was
 /// opened from) and bring the Drafts folder up to date, all over one connection, so the new
-/// version is in the list as soon as this returns.
-pub async fn save_draft(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], key: &str, replaces: Option<MessageRow>) -> Result<()> {
+/// version is in the list as soon as this returns. Returns the new version's message id.
+pub async fn save_draft(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], key: &str, replaces: Option<MessageRow>) -> Result<Option<i64>> {
     let mut s = connect(state, a).await?;
     s.append(&folder.path, Some("(\\Seen \\Draft)"), None, raw).await?;
-    prune_drafts(state, &mut s, folder, key, true).await?;
-    if let Some(m) = replaces.filter(|m| m.uid > 0) {
+    let kept = prune_drafts(state, &mut s, a, folder, key, true).await?;
+    // (Unless it was one of this draft's own versions, already removed above.)
+    if let Some(m) = replaces.filter(|m| m.uid > 0 && Some(m.uid as u32) != kept && state.db.message(m.id).is_ok()) {
         let f = state.db.folder(m.folder_id)?;
         s.select(&f.path).await?;
-        let set = m.uid.to_string();
-        let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
-        let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
+        drop_uids(state, &mut s, a, &f, &m.uid.to_string(), "").await?;
         let _ = state.db.delete_messages(&[m.id]);
     }
     let fresh = state.db.folder(folder.id)?;
     sync_folder(state, &mut s, a, &fresh).await?;
     let _ = s.logout().await;
-    Ok(())
+    Ok(match kept {
+        Some(uid) => state.db.message_id_by_uid(folder.id, uid as i64)?,
+        None => None,
+    })
 }
 
 /// Bring a few folders up to date right away (after sending, moving…), without waiting for the
@@ -654,7 +683,19 @@ pub async fn refresh_folders(state: &AppState, a: &Account, folder_ids: &[i64]) 
 /// Remove every saved version of a draft (it was sent or discarded).
 pub async fn delete_drafts(state: &AppState, a: &Account, folder: &Folder, key: &str) -> Result<()> {
     let mut s = connect(state, a).await?;
-    prune_drafts(state, &mut s, folder, key, false).await?;
+    prune_drafts(state, &mut s, a, folder, key, false).await?;
+    let _ = s.logout().await;
+    Ok(())
+}
+
+/// Throw messages away for good (drafts being replaced): see [`drop_uids`].
+pub async fn drop_messages(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Result<()> {
+    let mut s = connect(state, a).await?;
+    for (fid, group) in by_folder(msgs) {
+        let folder = state.db.folder(fid)?;
+        s.select(&folder.path).await?;
+        drop_uids(state, &mut s, a, &folder, &uid_set(&group), "").await?;
+    }
     let _ = s.logout().await;
     Ok(())
 }
