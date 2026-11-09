@@ -1191,4 +1191,12 @@ export const vi: Record<string, string> = {
   "Original": "Gốc",
   "Original size": "Kích thước gốc",
   "Remove picture": "Xoá ảnh",
+  "Align": "Căn lề",
+  "Remove formatting": "Xoá định dạng",
+  "Best fit": "Vừa khung",
+  "Insert emoji": "Chèn biểu tượng cảm xúc",
+  "OK": "OK",
+  "Describe the picture": "Mô tả ảnh",
+  "Edit alt text": "Sửa mô tả ảnh",
+  "Medium": "Vừa",
 };

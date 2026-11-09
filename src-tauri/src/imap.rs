@@ -341,7 +341,11 @@ pub async fn sync_folder(state: &AppState, s: &mut ImapSession, a: &Account, fol
     state.db.set_folder_sync(folder.id, validity, max_uid)?;
 
     // 3) Bodies for full-text search (newest first). New mail is always included, whatever its size.
-    match sync_bodies(state, s, a, folder, body_batch, &new_ids, &mut to_seen, &mut to_flag).await {
+    // New mail always gets its body (for body rules and search). Not on a folder's first sync:
+    // that "new" mail is the whole backlog (2000 messages took ~10 min while the mailbox couldn't
+    // sync anything else); it's indexed a batch per sync instead, newest first.
+    let forced: &[i64] = if folder.last_uid == 0 { &[] } else { &new_ids[new_ids.len().saturating_sub(300)..] };
+    match sync_bodies(state, s, a, folder, body_batch, forced, &mut to_seen, &mut to_flag).await {
         Ok(n) if n > 0 => crate::sync::log(state, a, "info", format!("{}: downloaded {n} message bodies for search", folder.name)),
         Ok(_) => {}
         Err(e) => crate::sync::log(state, a, "warn", format!("{}: downloading message bodies failed: {e:#}", folder.name)),

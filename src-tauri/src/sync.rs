@@ -48,6 +48,9 @@ pub fn log(state: &AppState, a: &Account, level: &str, message: impl Into<String
     if std::fs::metadata(&path).map(|m| m.len() > 2_000_000).unwrap_or(false) {
         let _ = std::fs::rename(&path, path.with_extension("old.log"));
     }
+    // One line at a time: several mailboxes log at once (their lines were interleaved).
+    static FILE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = FILE.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         use std::io::Write;
         let t = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");

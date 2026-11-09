@@ -3,6 +3,13 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.2
+
+- Pictures (composer and signature): Gmail-style bar under a clicked picture — Small · Medium · Best fit · Original size · Edit alt text · Remove (the % presets didn't work inside tables). A table cell or box that only holds the picture now follows its size, so shrinking a logo also closes the gap beside it.
+- The composer and the signature editor share one Gmail-like formatting bar: undo/redo, font, size, bold/italic/underline, text colour, highlight, alignment menu, numbered/bulleted lists, indent, quote, strikethrough, remove formatting, link, picture and emoji.
+- IMAP: a folder's first sync no longer downloads every message body at once (2000 bodies kept a Gmail mailbox busy for ~10 minutes, during which no new mail came in); bodies are indexed a batch per sync, newest first.
+- The sync log file no longer mixes up lines written by several mailboxes at the same moment.
+
 ## 0.8.1
 
 - **Resize pictures** while writing an email or a signature: click a picture for a frame with corner handles (drag to resize, proportions kept, size shown), and a bar with 25 % / 50 % / 75 % / 100 % / Original and Remove.
