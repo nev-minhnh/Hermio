@@ -84,7 +84,7 @@
 
   <div class="right" data-tauri-drag-region>
     <button class="ai-btn" class:on={store.aiOpen} title={t("AI assistant (Ctrl+J)")} onclick={() => { store.route = "mail"; store.aiOpen = !store.aiOpen; }}>
-      <span>✦</span> {t("Assistant")}
+      <span>✦</span> {t("AI Assistant")}
     </button>
     <button class="icon-btn sync-btn" class:on={syncOpen} title={t("Sync now and show the sync status (F5 syncs without opening)")} onclick={() => { if (!syncOpen) store.syncNow(null); syncOpen = !syncOpen; }}>
       <Icon name="sync" class={anySyncing ? "spin" : ""} />

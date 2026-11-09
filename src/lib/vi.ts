@@ -87,6 +87,7 @@ export const vi: Record<string, string> = {
   "Ask before deleting": "Hỏi trước khi xoá thư",
   "Assign a default signature to each account in Settings → Accounts.": "Gán chữ ký mặc định cho từng tài khoản trong Cài đặt → Tài khoản.",
   "Assistant": "Trợ lý",
+  "AI Assistant": "Trợ lý AI",
   "Attach": "Đính kèm",
   "Attach files": "Đính kèm tệp",
   "Attachments": "Có tệp",
@@ -1018,4 +1019,6 @@ export const vi: Record<string, string> = {
   "Keep the navigation open": "Giữ thanh điều hướng luôn mở",
   "Hide the navigation (a line at the left edge brings it back)": "Ẩn thanh điều hướng (di chuột vào vạch ở mép trái để mở lại)",
   "Pin": "Ghim",
+  "Email": "Email",
+  "Automate your inbox flow.": "Tự động hoá dòng thư của bạn.",
 };

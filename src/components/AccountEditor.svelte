@@ -164,7 +164,7 @@
 <div class="form">
   <div class="grid2">
     <label class="field">
-      <span>Email</span>
+      <span>{t("Email")}</span>
       <input class="input" bind:value={a.email} placeholder="ban@vidu.com" disabled={!!accountId && a.auth === "oauth_google"} />
     </label>
     <label class="field">

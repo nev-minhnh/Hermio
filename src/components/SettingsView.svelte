@@ -623,7 +623,7 @@
           <div class="row"><button class="btn" onclick={() => api.syncCalendars().then(() => store.success(t("Calendars synced"))).catch((e) => store.error(String(e)))}><Icon name="sync" size={16} />{t("Sync calendars now")}</button></div>
         </div>
       {:else if tab === "about"}
-        <div class="about-head"><div class="about-logo"><Logo size={64} /></div><div><h2 style="margin:0">Hermio</h2><div class="tagline">Automate your inbox flow.</div></div></div>
+        <div class="about-head"><div class="about-logo"><Logo size={64} /></div><div><h2 style="margin:0">Hermio</h2><div class="tagline">{t("Automate your inbox flow.")}</div></div></div>
         <p class="lead">{t("A light, fast email app for Windows 11 — IMAP, POP3, Google Workspace, Google Calendar.")}</p>
         <p class="ver"><b>{t("Version {v}", { v: __APP_VERSION__ })}</b> <span class="muted">· {t("built {d}", { d: __BUILD_DATE__ })}</span></p>
         <p class="muted">{t("Data (mail index, settings) is stored in the app data folder; passwords and tokens are stored in Windows Credential Manager.")}</p>

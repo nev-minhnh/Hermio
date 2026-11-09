@@ -263,7 +263,7 @@
     <div class="head">
       <button class="btn" onclick={today}><Icon name="today" size={16} />{t("Today")}</button>
       <button class="icon-btn" onclick={() => move(-1)} title={t("Previous")}><Icon name="chevronLeft" /></button>
-      <button class="icon-btn" onclick={() => move(1)} title="Sau"><Icon name="chevronRight" /></button>
+      <button class="icon-btn" onclick={() => move(1)} title={t("Next")}><Icon name="chevronRight" /></button>
       <h2>{title}</h2>
       <span class="grow"></span>
       <button class="icon-btn" onclick={syncNow} title={t("Sync calendars")}><Icon name="sync" class={syncing ? "spin" : ""} /></button>

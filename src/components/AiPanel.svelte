@@ -75,6 +75,8 @@
     const it = store.aiIntent;
     if (it && it.key !== lastIntent) {
       lastIntent = it.key;
+      // Taken once: reopening the panel later must not run it again (and spend tokens).
+      store.aiIntent = null;
       queueMicrotask(() => runTask(it.task, it.ids, it.prompt));
     }
   });

@@ -77,25 +77,49 @@ fn clip(s: &str, max: usize) -> String {
 }
 
 /// "10:04 AM" today, "08/11 10:04 AM" on another day.
-fn when(ts: i64) -> String {
+fn when(ts: i64, vi: bool) -> String {
     use chrono::{Local, TimeZone};
     let Some(t) = Local.timestamp_opt(ts, 0).single() else { return String::new() };
-    let time = t.format("%-I:%M %p").to_string();
+    let time = t.format(if vi { "%H:%M" } else { "%-I:%M %p" }).to_string();
     if t.date_naive() == Local::now().date_naive() { time } else { format!("{} {time}", t.format("%d/%m")) }
 }
 
-/// The toast XML for new mail (layout above). `launch` is what a click on it reports.
-fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str) -> String {
+/// Labels of the toast rows, in the interface language.
+struct Words {
+    from: &'static str,
+    to: &'static str,
+    no_subject: &'static str,
+}
+fn words(vi: bool) -> Words {
+    if vi {
+        Words { from: "Từ:", to: "Đến:", no_subject: "(Không có tiêu đề)" }
+    } else {
+        Words { from: "From:", to: "To:", no_subject: "(No subject)" }
+    }
+}
+
+/// The toast XML for new mail:
+///
+/// ```text
+///  The subject, in bold (the toast's title)
+///  From:  sender@example.com                 10:04 AM
+///  To:    me@example.com
+/// ```
+///
+/// Windows needs a top-level `<text>` as the title (without one it adds "<app> / New
+/// notification") and nothing can sit beside it, so the time is at the right of the From row.
+/// Labels are bold (`base`), addresses regular (`body`); each row is its own group, which gives
+/// the rows a little air without spreading them apart. `launch` is what a click reports.
+fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str, w: &Words) -> String {
     format!(
-        // Windows needs a top-level <text> as the toast's title (without one it shows its own
-        // "<app> / New notification" lines), and nothing can sit beside the title, so the time
-        // goes to the right of the lines below it.
-        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><text hint-maxLines="2">{subject}</text><group><subgroup hint-weight="74"><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup><subgroup hint-weight="26" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
+        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><text hint-maxLines="2">{subject}</text><group><subgroup hint-weight="15"><text hint-style="base">{lf}</text></subgroup><subgroup hint-weight="62"><text hint-style="body" hint-maxLines="1">{from}</text></subgroup><subgroup hint-weight="23"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group><group><subgroup hint-weight="15"><text hint-style="base">{lt}</text></subgroup><subgroup hint-weight="85"><text hint-style="body" hint-maxLines="1">{to}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
         launch = esc(launch),
         subject = esc(subject),
         time = esc(time),
         from = esc(from),
         to = esc(to),
+        lf = esc(w.from),
+        lt = esc(w.to),
     )
 }
 
@@ -106,13 +130,15 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
     if items.is_empty() || !setting_bool(state, "notifications", true) {
         return;
     }
-    let subj = |m: &NewMail| if m.subject.trim().is_empty() { "(No subject)".to_string() } else { m.subject.trim().to_string() };
-    let to = format!("To: {account}");
+    let vi = vi(state);
+    let w = words(vi);
+    let subj = |m: &NewMail| if m.subject.trim().is_empty() { w.no_subject.to_string() } else { m.subject.trim().to_string() };
+    let plain = |from: &str| format!("{} {from}\n{} {account}", w.from, w.to);
     if items.len() <= 3 {
         for m in items {
-            let subject = format!("Subject: {}", subj(m));
-            let from = format!("From: {}", clip(&m.from_line(), 60));
-            show(state, &mail_xml(&subject, &when(m.date), &from, &to, &format!("msg:{}:{account_id}", m.id)), &subject, &format!("{from}\n{to}"));
+            let subject = subj(m);
+            let from = clip(&m.from_line(), 60);
+            show(state, &mail_xml(&subject, &when(m.date, vi), &from, account, &format!("msg:{}:{account_id}", m.id), &w), &subject, &plain(&from));
         }
     } else {
         let mut senders: Vec<String> = vec![];
@@ -125,18 +151,20 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
         let names = if senders.len() > 3 { format!("{} +{}", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
         // A click opens the newest of them, in its inbox.
         let newest = items.iter().max_by_key(|m| (m.date, m.id)).unwrap();
-        let subject = format!("Subject: {} (+{} more)", subj(newest), items.len() - 1);
-        let from = format!("From: {}", clip(&names, 60));
-        show(state, &mail_xml(&subject, &when(newest.date), &from, &to, &format!("msg:{}:{account_id}", newest.id)), &subject, &format!("{from}\n{to}"));
+        let more = if vi { format!("(+{} thư khác)", items.len() - 1) } else { format!("(+{} more)", items.len() - 1) };
+        let subject = format!("{} {more}", subj(newest));
+        let from = clip(&names, 60);
+        show(state, &mail_xml(&subject, &when(newest.date, vi), &from, account, &format!("msg:{}:{account_id}", newest.id), &w), &subject, &plain(&from));
     }
 }
 
 /// A sample new-mail toast (Settings → "Send a test notification").
 pub fn test(state: &AppState) {
-    let subject = "Subject: Hermio notification test";
-    let to = "To: you@example.com";
-    let from = "From: hermio@localhost";
-    show(state, &mail_xml(subject, &when(chrono::Utc::now().timestamp()), from, to, "test"), subject, &format!("{from}\n{to}"));
+    let vi = vi(state);
+    let w = words(vi);
+    let subject = if vi { "Thông báo thử của Hermio" } else { "Hermio notification test" };
+    let xml = mail_xml(subject, &when(chrono::Utc::now().timestamp(), vi), "hermio@localhost", "you@example.com", "test", &w);
+    show(state, &xml, subject, &format!("{} hermio@localhost\n{} you@example.com", w.from, w.to));
 }
 
 /// "2 h", "1 h 30 min", "15 min" (or Vietnamese).
@@ -301,13 +329,16 @@ mod tests {
 
     #[test]
     fn mail_toast_xml() {
-        let x = mail_xml("Subject: A & B", "10:04 AM", "From: a@x.com", "To: me@x.com", "msg:1:2");
-        assert!(x.contains("Subject: A &amp; B"));
+        let x = mail_xml("A & B", "10:04 AM", "a@x.com", "me@x.com", "msg:1:2", &words(false));
+        // The subject alone is the toast's title, before any row.
+        assert!(x.find(r#"<text hint-maxLines="2">A &amp; B</text>"#).unwrap() < x.find("<group>").unwrap());
+        assert!(!x.contains("Subject"));
+        // Bold labels, regular addresses, time on the right of the From row.
+        assert!(x.contains(r#"<text hint-style="base">From:</text>"#));
+        assert!(x.contains(r#"<text hint-style="body" hint-maxLines="1">a@x.com</text>"#));
         assert!(x.contains(r#"hint-align="right">10:04 AM<"#));
-        // The subject is the toast's title: a top-level <text> before any group.
-        assert!(x.find(r#"<text hint-maxLines="2">Subject: A &amp; B</text>"#).unwrap() < x.find("<group>").unwrap());
-        assert!(x.contains(r#"launch="msg:1:2""#));
         assert!(x.find("From:").unwrap() < x.find("To:").unwrap());
+        assert!(mail_xml("s", "t", "f", "t", "l", &words(true)).contains(">Đến:<"));
         assert_eq!(clip("abcdef", 4), "abc…");
     }
 

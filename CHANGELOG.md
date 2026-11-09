@@ -3,6 +3,18 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.6.3
+
+- **AI Assistant** button (was "Assistant"). Opening the panel no longer re-runs the last AI
+  action: an action started from a menu ("AI: summarize…") used to run again every time the
+  panel was reopened, spending tokens. It now runs once.
+- Notifications: the subject alone is the bold title (no "Subject:" prefix); the rows below have
+  bold **From:** / **To:** labels with the addresses in regular weight, each row on its own line
+  with a little space between them, and the time on the right of the From row.
+- Notifications follow the interface language (Từ: / Đến:, 24-hour time, "(+n thư khác)").
+- The remaining untranslated labels in the app (model, email, calendar navigation, slogan) are
+  now in Vietnamese too.
+
 ## 0.6.2
 
 - **Unread count on the taskbar icon**: the total unread mail in the inboxes of every

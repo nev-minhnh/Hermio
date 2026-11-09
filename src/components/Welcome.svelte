@@ -9,7 +9,7 @@
   <div class="hero">
     <Logo size={96} />
     <h1>Hermio</h1>
-    <div class="tagline">Automate your inbox flow.</div>
+    <div class="tagline">{t("Automate your inbox flow.")}</div>
     <p class="muted">{t("Add your first email account to get started. Gmail, Google Workspace, IMAP, POP3 and Google Calendar are supported.")}</p>
     <div class="row">
       <button class="btn primary big" onclick={() => { store.settingsTab = "add"; store.route = "settings"; }}>

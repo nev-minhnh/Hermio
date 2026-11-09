@@ -394,7 +394,7 @@
       </label>
     {/if}
     <div class="field">
-      <span>Model</span>
+      <span>{t("Model")}</span>
       <div class="row">
         {#if models.length}
           <select class="input grow" bind:value={edit.model}>
