@@ -13,7 +13,7 @@
   import RulesSettings from "./RulesSettings.svelte";
   import AiSettings from "./AiSettings.svelte";
   import RichEditor from "./RichEditor.svelte";
-  import { pickIcsFile, pickConfigSave, pickConfigOpen, pickFolder, pickBackupSave, pickBackupOpen, listen } from "../lib/tauri";
+  import { pickIcsFile, pickConfigSave, pickConfigOpen, pickFolder, pickBackupSave, pickBackupOpen } from "../lib/tauri";
   import type { Calendar } from "../lib/api";
 
   const tabs = [
@@ -212,38 +212,25 @@
     }
   }
   // ----- moving all data -----
-  let dataBusy = $state(false);
-  let dataProg = $state<{ stage: string; done: number; total: number } | null>(null);
-  let staged = $state<string | null>(null);
-  async function withProgress<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    dataBusy = true;
-    const un = await listen<{ stage: string; done: number; total: number }>("data-progress", (p) => (dataProg = p.stage === "done" ? null : p));
-    try {
-      return await fn();
-    } catch (e) {
-      store.error(String(e));
-    } finally {
-      un();
-      dataBusy = false;
-      dataProg = null;
-    }
-  }
+  // The job lives in the store: it keeps running (and its progress stays) while you go elsewhere.
+  const dataBusy = $derived(!!store.dataJob);
+  const dataProg = $derived(store.dataJob?.prog ?? null);
   async function copyFromOld() {
     const dir = await pickFolder(t("Choose the folder of the older copy (with Hermio.exe or Nelo.exe) or its data folder"));
     if (!dir) return;
-    const r = await withProgress(() => api.dataStageRestore(dir));
-    if (r) staged = r;
+    const r = await store.runDataJob("restore", () => api.dataStageRestore(dir));
+    if (r) store.dataStaged = r;
   }
   async function restoreBackup() {
     const f = await pickBackupOpen();
     if (!f) return;
-    const r = await withProgress(() => api.dataStageRestore(f));
-    if (r) staged = r;
+    const r = await store.runDataJob("restore", () => api.dataStageRestore(f));
+    if (r) store.dataStaged = r;
   }
   async function makeBackup() {
     const f = await pickBackupSave(`Hermio-${__APP_VERSION__}-backup-${new Date().toISOString().slice(0, 10)}.zip`);
     if (!f) return;
-    const n = await withProgress(() => api.dataBackup(f, true));
+    const n = await store.runDataJob("backup", () => api.dataBackup(f, true));
     if (n !== undefined) store.success(t("Backup saved"));
   }
   async function doImport() {
@@ -536,13 +523,6 @@
               </button>
             {/if}
             <div class="field badge-opt">
-              <span>{t("Notification layout")}<br /><span class="muted small">{t("“Send a test notification” shows all of them; pick the one that looks right on your PC.")}</span></span>
-              <div class="segmented" use:pill>
-                <button class:on={store.settings.toast_layout !== 2} onclick={() => store.set("toast_layout", 3)}>{t("Layout 1")}</button>
-                <button class:on={store.settings.toast_layout === 2} onclick={() => store.set("toast_layout", 2)}>{t("Layout 2")}</button>
-              </div>
-            </div>
-            <div class="field badge-opt">
               <span>{t("Unread count on the taskbar icon")}<br /><span class="muted small">{t("All unread mail in the inboxes of every signed-in mailbox. Also shown on the tray icon.")}</span></span>
               <div class="segmented" use:pill>
                 <button class:on={store.settings.taskbar_badge === "count"} onclick={() => store.set("taskbar_badge", "count")}>{t("Number")}</button>
@@ -633,7 +613,7 @@
         <div class="about-head"><div class="about-logo"><Logo size={64} /></div><div><h2 style="margin:0">Hermio</h2><div class="tagline">{t("Automate your inbox flow.")}</div></div></div>
         <p class="lead">{t("A light, fast email app for Windows 11 — IMAP, POP3, Google Workspace, Google Calendar.")}</p>
         <p class="ver"><b>{t("Version {v}", { v: __APP_VERSION__ })}</b> <span class="muted">· {t("built {d}", { d: __BUILD_DATE__ })}</span></p>
-        <p class="muted">{t("Data (mail index, settings) is stored in the app data folder; passwords and tokens are stored in Windows Credential Manager.")}</p>
+        <p class="muted">{t("Data (mail index, settings, downloaded mail) is stored in Documents\\Hermio_Emails; passwords and tokens are stored in Windows Credential Manager.")}</p>
         <p class="muted small">{t("Open source under the MIT or Apache-2.0 licence.")} <button class="lnk" onclick={() => api.openUrl("https://github.com/nev-minhnh/Hermio")}>github.com/nev-minhnh/Hermio</button></p>
       {:else if tab === "backup"}
         <h2>{t("Backup & transfer")}</h2>
@@ -647,18 +627,18 @@
               <button class="btn" onclick={restoreBackup} disabled={dataBusy}><Icon name="upload" size={16} />{t("Restore a full backup…")}</button>
               <button class="btn" onclick={makeBackup} disabled={dataBusy}><Icon name="download" size={16} />{t("Create a full backup…")}</button>
             </div>
-            {#if dataProg}
+            {#if dataBusy}
               <div class="prog" transition:slide={{ duration: 160 }}>
-                <div class="track"><div class="fill" class:indet={!dataProg.total || dataProg.stage === "database"} style:width="{dataProg.total ? Math.round((dataProg.done / dataProg.total) * 100) : 30}%"></div></div>
-                <span class="small muted">{dataProg.stage === "database" ? t("Copying the database…") : t("Copying files {done}/{total}…", dataProg)}</span>
+                <div class="track"><div class="fill" class:indet={!dataProg?.total || dataProg.stage === "database"} style:width="{dataProg?.total ? Math.round((dataProg.done / dataProg.total) * 100) : 30}%"></div></div>
+                <span class="small muted">{!dataProg ? t("Preparing…") : dataProg.stage === "database" ? t("Copying the database…") : t("Copying files {done}/{total}…", dataProg)}</span>
               </div>
             {/if}
-            {#if staged}
+            {#if store.dataStaged}
               <div class="note small" transition:slide={{ duration: 180 }}>
-                <div>{t("Ready to restore: {what}. Hermio restarts and swaps the data in.", { what: staged })}</div>
+                <div>{t("Ready to restore: {what}. Hermio restarts and swaps the data in.", { what: store.dataStaged })}</div>
                 <div class="row" style="margin-top:6px">
                   <button class="btn primary" onclick={() => api.appRestart()}>{t("Restart now")}</button>
-                  <button class="btn subtle" onclick={() => { api.dataCancelRestore(); staged = null; }}>{t("Cancel")}</button>
+                  <button class="btn subtle" onclick={() => { api.dataCancelRestore(); store.dataStaged = null; }}>{t("Cancel")}</button>
                 </div>
               </div>
             {/if}

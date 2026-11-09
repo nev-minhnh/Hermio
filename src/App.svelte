@@ -60,6 +60,7 @@
       );
       unsubs.push(await listen<{ message: string }>("op-error", (p) => store.error(p.message)));
       unsubs.push(await listen("outbox-changed", () => store.loadOutbox()));
+      unsubs.push(await listen<{ stage: string; done: number; total: number }>("data-progress", (p) => store.onDataProgress(p)));
       unsubs.push(
         await listen<{ subject: string }>("scheduled-sent", (p) => {
           store.success(t("Scheduled message sent: {subject}", { subject: p?.subject || t("(No subject)") }));
@@ -187,6 +188,15 @@
     <div class="busybar" role="progressbar" aria-label={t("Working…")} transition:fade={{ duration: 200 }}><span></span></div>
   {/if}
   <SendQueue />
+  {#if store.dataJob && !(store.route === "settings" && store.settingsTab === "backup")}
+    {@const p = store.dataJob.prog}
+    <button class="data-job" transition:fade={{ duration: 160 }} onclick={() => { store.settingsTab = "backup"; store.route = "settings"; }}>
+      <span class="spin-dot"></span>
+      <span>{store.dataJob.kind === "backup" ? t("Creating a full backup…") : t("Preparing the restore…")}</span>
+      {#if p?.total}<b>{Math.round((p.done / p.total) * 100)}%</b>{/if}
+      <span class="bar"><i class:indet={!p?.total || p.stage === "database"} style:width="{p?.total ? Math.round((p.done / p.total) * 100) : 30}%"></i></span>
+    </button>
+  {/if}
   <SuggestPopup />
 </div>
 
@@ -251,4 +261,56 @@
     animation: scale-in 220ms var(--ease);
   }
 
+  .data-job {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.18));
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .data-job b {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+  }
+  .data-job .bar {
+    width: 120px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .data-job .bar i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+  .data-job .bar i.indet {
+    animation: dj 1.2s ease-in-out infinite;
+  }
+  @keyframes dj {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .spin-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: sp 0.8s linear infinite;
+  }
+  @keyframes sp {
+    to { transform: rotate(360deg); }
+  }
 </style>

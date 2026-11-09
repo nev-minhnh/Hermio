@@ -3,6 +3,11 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.4
+
+- New-mail notifications use one layout: the subject is the title, then From / To with the time on the right. The attribution layout (which made Windows add "Hermio / New notification") and the layout setting are gone.
+- A full backup, restore or copy from an older copy keeps running with its progress when you leave Settings: a small progress card shows it from anywhere (click it to go back).
+
 ## 0.7.3
 
 - All of Hermio's data now lives in `Documents\Hermio_Emails` (created if missing), for the installed and the portable copy alike. On the first start, the existing data (from `%APPDATA%\app.hermio.mail` or a portable copy's `data` folder) is moved there — renamed when on the same drive, otherwise copied and the old folder removed only after everything arrived — and the paths stored in the database are updated.

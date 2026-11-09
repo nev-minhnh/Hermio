@@ -211,6 +211,24 @@ class Store {
   selected = $state<number[]>([]);
   anchor = $state<number | null>(null);
   compose = $state<ComposeInit | null>(null);
+  /** Full backup / restore / copy from an older copy: kept here so leaving Settings doesn't lose it. */
+  dataJob = $state<{ kind: "backup" | "restore"; prog: { stage: string; done: number; total: number } | null } | null>(null);
+  dataStaged = $state<string | null>(null);
+  /** Run a data job; progress comes from the "data-progress" event (listened to in App). */
+  async runDataJob<T>(kind: "backup" | "restore", fn: () => Promise<T>): Promise<T | undefined> {
+    if (this.dataJob) return;
+    this.dataJob = { kind, prog: null };
+    try {
+      return await fn();
+    } catch (e) {
+      this.error(String(e));
+    } finally {
+      this.dataJob = null;
+    }
+  }
+  onDataProgress(p: { stage: string; done: number; total: number }) {
+    if (this.dataJob) this.dataJob.prog = p.stage === "done" ? null : p;
+  }
   /** The saved version of the message being written (its row in Drafts), if any. */
   composeDraftId = $state<number | null>(null);
   /** Key of a composer closed because its draft was deleted: it must not save again. */

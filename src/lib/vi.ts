@@ -1154,4 +1154,7 @@ export const vi: Record<string, string> = {
   "Saved to Drafts {time}": "Đã lưu vào Thư nháp {time}",
   "Saving draft…": "Đang lưu bản nháp…",
   "Your message is saved to Drafts as you write": "Thư được tự động lưu vào Thư nháp khi bạn đang viết",
+  "Preparing the restore…": "Đang chuẩn bị khôi phục…",
+  "Creating a full backup…": "Đang tạo bản sao lưu đầy đủ…",
+  "Data (mail index, settings, downloaded mail) is stored in Documents\\Hermio_Emails; passwords and tokens are stored in Windows Credential Manager.": "Dữ liệu (chỉ mục thư, cài đặt, thư đã tải) được lưu trong Documents\\Hermio_Emails; mật khẩu và token lưu trong Windows Credential Manager.",
 };

@@ -106,38 +106,22 @@ fn words(vi: bool) -> Words {
 ///  To:    me@example.com
 /// ```
 ///
-/// Windows 11 draws a toast's title (its first top-level `<text>`) in regular weight and puts
-/// a fixed gap under it, so the subject is drawn as bold content text instead, and the From /
-/// To rows are stacked in one group (no gap between them; a small one under the subject).
-/// Windows still insists on a top-level text ("<app> / New notification" otherwise):
-/// layout 1 uses an invisible one (a zero-width space — Windows keeps an empty line for it, a
-/// big gap at the top), layout 2 a small attribution line at the bottom, layout 3 makes the
-/// subject itself the title (no gap, but Windows draws it in regular weight). Labels are bold (`base`), addresses regular (`body`). `launch` is what a click
-/// reports.
-fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str, w: &Words, layout: u8) -> String {
-    let (top, head) = match layout {
-        2 => (r#"<text placement="attribution">Hermio</text>"#.to_string(), format!(r#"<group><subgroup><text hint-style="base" hint-maxLines="2">{}</text></subgroup></group>"#, esc(subject))),
-        // The subject is the toast's own title: nothing above it, no empty line.
-        _ => (format!(r#"<text hint-maxLines="2">{}</text>"#, esc(subject)), String::new()),
-    };
+/// The subject is the toast's title (in the notification centre it sits right under the
+/// "Hermio" header); From / To are stacked in one group with bold labels (`base`) and regular
+/// addresses (`body`). `launch` is what a click reports.
+fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str, w: &Words) -> String {
+    // The subject is the toast's title (Windows needs a top-level text, or it shows
+    // "Hermio / New notification"): nothing above it, then From / To with the time on the right.
     format!(
-        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric">{top}{head}<group><subgroup hint-weight="15"><text hint-style="base">{lf}</text><text hint-style="base">{lt}</text></subgroup><subgroup hint-weight="62"><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup><subgroup hint-weight="23"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
+        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><text hint-maxLines="2">{subject}</text><group><subgroup hint-weight="15"><text hint-style="base">{lf}</text><text hint-style="base">{lt}</text></subgroup><subgroup hint-weight="62"><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup><subgroup hint-weight="23"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
         launch = esc(launch),
+        subject = esc(subject),
         time = esc(time),
         from = esc(from),
         to = esc(to),
         lf = esc(w.from),
         lt = esc(w.to),
     )
-}
-
-/// Which way to satisfy Windows' title requirement (see [`mail_xml`]): 3 (subject as the title)
-/// unless 2 was chosen. The old layout 1 (an invisible title line) left a big empty band on top.
-fn layout(state: &AppState) -> u8 {
-    match state.db.get_setting("toast_layout").ok().flatten().and_then(|v| v.trim_matches('"').parse::<u8>().ok()) {
-        Some(2) => 2,
-        _ => 3,
-    }
 }
 
 /// Show the toasts for what one sync run of one mailbox brought in: one toast per message for
@@ -149,14 +133,13 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
     }
     let vi = vi(state);
     let w = words(vi);
-    let lay = layout(state);
     let subj = |m: &NewMail| if m.subject.trim().is_empty() { w.no_subject.to_string() } else { m.subject.trim().to_string() };
     let plain = |from: &str| format!("{} {from}\n{} {account}", w.from, w.to);
     if items.len() <= 3 {
         for m in items {
             let subject = subj(m);
             let from = clip(&m.from_line(), 60);
-            show(state, &mail_xml(&subject, &when(m.date, vi), &from, account, &format!("msg:{}:{account_id}", m.id), &w, lay), &subject, &plain(&from));
+            show(state, &mail_xml(&subject, &when(m.date, vi), &from, account, &format!("msg:{}:{account_id}", m.id), &w), &subject, &plain(&from));
         }
     } else {
         let mut senders: Vec<String> = vec![];
@@ -172,20 +155,17 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
         let more = if vi { format!("(+{} thư khác)", items.len() - 1) } else { format!("(+{} more)", items.len() - 1) };
         let subject = format!("{} {more}", subj(newest));
         let from = clip(&names, 60);
-        show(state, &mail_xml(&subject, &when(newest.date, vi), &from, account, &format!("msg:{}:{account_id}", newest.id), &w, lay), &subject, &plain(&from));
+        show(state, &mail_xml(&subject, &when(newest.date, vi), &from, account, &format!("msg:{}:{account_id}", newest.id), &w), &subject, &plain(&from));
     }
 }
 
-/// Sample new-mail toasts (Settings → "Send a test notification"): one per layout, so the
-/// better-looking one can be chosen.
+/// A sample new-mail toast (Settings → "Send a test notification").
 pub fn test(state: &AppState) {
     let vi = vi(state);
     let w = words(vi);
-    for (n, lay) in [(1u8, 3u8), (2, 2)] {
-        let subject = if vi { format!("Mẫu {n} — thông báo thử của Hermio") } else { format!("Layout {n} — Hermio notification test") };
-        let xml = mail_xml(&subject, &when(chrono::Utc::now().timestamp(), vi), "hermio@localhost", "you@example.com", "test", &w, lay);
-        show(state, &xml, &subject, &format!("{} hermio@localhost\n{} you@example.com", w.from, w.to));
-    }
+    let subject = if vi { "Thông báo thử của Hermio".to_string() } else { "Hermio notification test".to_string() };
+    let xml = mail_xml(&subject, &when(chrono::Utc::now().timestamp(), vi), "hermio@localhost", "you@example.com", "test", &w);
+    show(state, &xml, &subject, &format!("{} hermio@localhost\n{} you@example.com", w.from, w.to));
 }
 
 /// "2 h", "1 h 30 min", "15 min" (or Vietnamese).
@@ -350,25 +330,17 @@ mod tests {
 
     #[test]
     fn mail_toast_xml() {
-        let x = mail_xml("A & B", "10:04 AM", "a@x.com", "me@x.com", "msg:1:2", &words(false), 2);
-        // Layout 2: the subject is bold content, first; "Hermio" as the attribution line.
-        assert!(x.contains(r#"placement="attribution""#) && !x.contains("\u{200B}"));
-        assert!(x.find(r#"<text hint-style="base" hint-maxLines="2">A &amp; B</text>"#).unwrap() < x.find("From:").unwrap());
-        // From and To in the same group (no gap between them).
-        assert_eq!(x.matches("<group>").count(), 2);
-        // The old layout 1 now falls back to the title layout: no invisible top line.
-        assert!(!mail_xml("s", "t", "f", "t", "l", &words(false), 1).contains("\u{200B}"));
+        let x = mail_xml("A & B", "10:04 AM", "a@x.com", "me@x.com", "msg:1:2", &words(false));
+        // The subject is the title itself: no invisible line, no attribution, one From/To group.
+        assert!(x.contains(r#"<binding template="ToastGeneric"><text hint-maxLines="2">A &amp; B</text><group>"#));
+        assert!(!x.contains("\u{200B}") && !x.contains("attribution") && x.matches("<group>").count() == 1);
         assert!(!x.contains("Subject"));
         // Bold labels, regular addresses, time on the right of the From row.
         assert!(x.contains(r#"<text hint-style="base">From:</text>"#));
         assert!(x.contains(r#"<text hint-style="body" hint-maxLines="1">a@x.com</text>"#));
         assert!(x.contains(r#"hint-align="right">10:04 AM<"#));
         assert!(x.find("From:").unwrap() < x.find("To:").unwrap());
-        assert!(mail_xml("s", "t", "f", "t", "l", &words(true), 1).contains(">Đến:<"));
-        // Layout 3: the subject is the title itself — no invisible line, no separate subject row.
-        let y = mail_xml("Hello", "t", "f", "t", "l", &words(false), 3);
-        assert!(y.contains(r#"<binding template="ToastGeneric"><text hint-maxLines="2">Hello</text><group>"#));
-        assert!(!y.contains("\u{200B}") && y.matches("<group>").count() == 1);
+        assert!(mail_xml("s", "t", "f", "t", "l", &words(true)).contains(">Đến:<"));
         assert_eq!(clip("abcdef", 4), "abc…");
     }
 
