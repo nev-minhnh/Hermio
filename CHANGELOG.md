@@ -3,6 +3,10 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.3
+
+- All of Hermio's data now lives in `Documents\Hermio_Emails` (created if missing), for the installed and the portable copy alike. On the first start, the existing data (from `%APPDATA%\app.hermio.mail` or a portable copy's `data` folder) is moved there — renamed when on the same drive, otherwise copied and the old folder removed only after everything arrived — and the paths stored in the database are updated.
+
 ## 0.7.2
 
 - Deleting a draft works reliably: opening a draft (or a reply) no longer saves a new copy by itself — previously the copy replaced the draft seconds after it was opened, so the one being deleted was already gone and the copy stayed. Deleting or moving the draft that is open in the editor now closes the editor without saving it again.

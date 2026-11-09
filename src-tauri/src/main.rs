@@ -107,14 +107,23 @@ fn main() {
             }
             tray.build(app)?;
 
-            // Portable mode: a file named "portable" next to Hermio.exe keeps all data in .\data.
+            // All data lives in Documents\Hermio_Emails (created if missing). Data from where
+            // earlier versions kept it (AppData, or .\data next to a portable Hermio.exe) is moved
+            // there on the first start.
             let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
-            let dir = match exe_dir {
-                Some(d) if d.join("portable").exists() || d.join("portable.txt").exists() => d.join("data"),
-                _ => app.path().app_data_dir()?,
-            };
-            // First start after the rename: take over the data of the installed Hermio.
-            let migrated = backup::migrate_from_hermio(&dir);
+            let appdata = app.path().app_data_dir()?;
+            let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents")))?;
+            let dir = docs.join("Hermio_Emails");
+            // First start after the rename: take over the data of the installed Nelo.
+            let mut migrated = backup::migrate_from_hermio(&appdata);
+            let portable = exe_dir.map(|d| d.join("data")).filter(|d| d.join(db::DB_FILE).is_file() || d.join(db::LEGACY_DB).is_file());
+            for old in portable.into_iter().chain([appdata.clone()]) {
+                if let Some(o) = backup::move_data_folder(&old, &dir) {
+                    migrated = Some(o);
+                    break;
+                }
+            }
+            std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
             // A restore prepared in Backup & transfer is swapped in now, before the database opens.
             let restored = backup::apply_pending(&dir);
             // Lets Windows show our toasts (also for the portable copy, which has no shortcut).
@@ -128,7 +137,7 @@ fn main() {
             });
             app.manage(state.clone());
             if let Some(old) = migrated {
-                sync::log_plain(&state, "info", format!("Moved your data from Nelo ({}) to Hermio", old.display()));
+                sync::log_plain(&state, "info", format!("Moved your data from {} to {}", old.display(), state.db.data_dir.display()));
             }
             if let Some(kept) = restored {
                 let _ = state.db.set_setting("restored_note", &serde_json::to_string(&kept).unwrap_or_default());

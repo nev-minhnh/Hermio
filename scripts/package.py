@@ -50,8 +50,9 @@ made.append(f)
 readme = f"""Hermio {V} — portable
 Hermio – Automate your inbox flow.
 
-Run Hermio.exe. Because portable.txt sits next to it, all data (mail index, settings,
-POP3 mail, AI runtime) is kept in the "data" folder beside Hermio.exe.
+Run Hermio.exe. All data (mail index, settings, downloaded and POP3 mail, AI runtime) is
+kept in Documents\\Hermio_Emails, created on the first start; data an older portable copy kept
+in the "data" folder beside Hermio.exe is moved there automatically.
 Passwords, tokens and API keys are stored in Windows Credential Manager.
 Requires Microsoft Edge WebView2 Runtime (built into Windows 11).
 

@@ -90,8 +90,9 @@ on every push. Tagged versions are attached to
 [Releases](https://github.com/nev-minhnh/Hermio/releases):
 
 - `Hermio-<version>-installer.zip` contains a per-user NSIS installer.
-- `Hermio-<version>-portable.zip`: unzip and run `Hermio.exe`. Data stays in the `data`
-  folder next to it.
+- `Hermio-<version>-portable.zip`: unzip and run `Hermio.exe`.
+
+Both keep their data in `Documents\Hermio_Emails`.
 
 Requires Windows 10/11 with the WebView2 Runtime (built into Windows 11).
 
@@ -159,7 +160,9 @@ scripts/            packaging and cross-build helpers
 .github/workflows/  Windows build on GitHub Actions
 ```
 
-Data lives in `%APPDATA%\app.hermio.mail`, or in `data\` next to `Hermio.exe` in portable mode.
+Data lives in `Documents\Hermio_Emails` (created if missing). On the first start of 0.7.3 or
+later, data from earlier locations (`%APPDATA%\app.hermio.mail`, or `data\` next to a portable
+`Hermio.exe`) is moved there and the paths stored in the database are updated.
 
 ## Contributing
 

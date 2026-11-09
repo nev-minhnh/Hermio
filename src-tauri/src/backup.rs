@@ -640,6 +640,57 @@ pub fn migrate_from_hermio(new_dir: &std::path::Path) -> Option<std::path::PathB
     Some(old)
 }
 
+/// Move a whole data folder to `new_dir` (Documents\Hermio_Emails) the first time Hermio starts
+/// there, then point the paths stored in the database at the new place. Renames when both are on
+/// the same drive; otherwise copies everything and removes the old folder only once every file
+/// arrived. Returns the old folder when something was moved.
+pub fn move_data_folder(old: &std::path::Path, new_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    if old == new_dir || new_dir.join(DB).exists() || new_dir.join(LEGACY_DB).exists() {
+        return None;
+    }
+    let db = [DB, LEGACY_DB].into_iter().find(|f| old.join(f).is_file())?;
+    if let Some(p) = new_dir.parent() {
+        std::fs::create_dir_all(p).ok()?;
+    }
+    let empty = std::fs::read_dir(new_dir).map(|mut d| d.next().is_none()).unwrap_or(true);
+    let renamed = empty && {
+        let _ = std::fs::remove_dir(new_dir);
+        std::fs::rename(old, new_dir).is_ok()
+    };
+    if !renamed {
+        std::fs::create_dir_all(new_dir).ok()?;
+        // Copy first; the old folder is removed only if every file made it.
+        if copy_tree(old, new_dir).is_err() || !new_dir.join(db).is_file() {
+            let _ = std::fs::remove_file(new_dir.join(db));
+            return None;
+        }
+        let _ = std::fs::remove_dir_all(old);
+    }
+    let (o, n) = (old.to_string_lossy().to_string(), new_dir.to_string_lossy().to_string());
+    if let Ok(c) = rusqlite::Connection::open(new_dir.join(db)) {
+        let _ = c.execute("UPDATE messages SET raw_path = ?2 || substr(raw_path, length(?1) + 1) WHERE raw_path LIKE ?1 || '%'", [&o, &n]);
+        let _ = c.execute("UPDATE accounts SET pop3_dir = ?2 || substr(pop3_dir, length(?1) + 1) WHERE pop3_dir LIKE ?1 || '%'", [&o, &n]);
+        let _ = c.execute("UPDATE settings SET value = replace(value, ?1, ?2)", [&o, &n]);
+        let _ = c.execute("UPDATE settings SET value = replace(value, ?1, ?2)", [o.replace('\\', "\\\\"), n.replace('\\', "\\\\")]);
+    }
+    Some(old.to_path_buf())
+}
+
+/// Copy a folder's contents (files that already exist at the destination are kept).
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let dest = to.join(e.file_name());
+        if e.file_type()?.is_dir() {
+            copy_tree(&e.path(), &dest)?;
+        } else if !dest.exists() {
+            std::fs::copy(e.path(), &dest)?;
+        }
+    }
+    Ok(())
+}
+
 /// At start-up, before the database opens: swap in a staged restore. The previous data is kept in
 /// `before-restore-<date>` next to it, in case something went wrong.
 pub fn apply_pending(data: &std::path::Path) -> Option<String> {
@@ -716,6 +767,29 @@ pub fn apply_pending(data: &std::path::Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moves_data_folder() {
+        let base = std::env::temp_dir().join(format!("hermio-move-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let old = base.join("appdata");
+        std::fs::create_dir_all(old.join("cache").join("1")).unwrap();
+        std::fs::write(old.join("cache").join("1").join("a.eml"), b"x").unwrap();
+        {
+            let c = rusqlite::Connection::open(old.join(DB)).unwrap();
+            c.execute_batch("CREATE TABLE messages(raw_path TEXT); CREATE TABLE accounts(pop3_dir TEXT); CREATE TABLE settings(key TEXT, value TEXT);").unwrap();
+            c.execute("INSERT INTO messages VALUES(?1)", [old.join("cache").join("1").join("a.eml").to_string_lossy().to_string()]).unwrap();
+        }
+        let new = base.join("Documents").join("Hermio_Emails");
+        assert_eq!(move_data_folder(&old, &new).as_deref(), Some(old.as_path()));
+        assert!(new.join("cache").join("1").join("a.eml").is_file() && !old.exists());
+        let c = rusqlite::Connection::open(new.join(DB)).unwrap();
+        let p: String = c.query_row("SELECT raw_path FROM messages", [], |r| r.get(0)).unwrap();
+        assert!(p.starts_with(&new.to_string_lossy().to_string()));
+        // Already there: nothing more happens.
+        assert!(move_data_folder(&old, &new).is_none());
+        let _ = std::fs::remove_dir_all(&base);
+    }
     use crate::db::Db;
     use crate::models::*;
 
