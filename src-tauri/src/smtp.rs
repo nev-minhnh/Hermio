@@ -46,14 +46,25 @@ pub fn build(a: &Account, o: &Outgoing) -> Result<(Message, Vec<u8>)> {
         use lettre::message::header::{HeaderName, HeaderValue};
         b = b.raw_header(HeaderValue::new(HeaderName::new_from_ascii_str(DRAFT_HEADER), o.draft_key.clone()));
     }
+    // Pictures pasted into the message or the signature are data: URLs, which Gmail and most
+    // phone apps don't show: they are sent as inline parts (cid:) instead.
+    let (body_html, inline) = inline_images(&o.html);
     let html = format!(
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body style=\"font-family:'Segoe UI',Arial,sans-serif;font-size:14px\">{}</body></html>",
-        o.html
+        body_html
     );
     let text = crate::parse::html_to_text(&o.html);
-    let alt = MultiPart::alternative()
-        .singlepart(SinglePart::plain(text))
-        .singlepart(SinglePart::html(html));
+    let html_part = if inline.is_empty() {
+        MultiPart::alternative().singlepart(SinglePart::html(html))
+    } else {
+        let mut rel = MultiPart::related().singlepart(SinglePart::html(html));
+        for (cid, mime, data) in inline {
+            let ct = ContentType::parse(&mime).unwrap_or(ContentType::parse("application/octet-stream").unwrap());
+            rel = rel.singlepart(Attachment::new_inline(cid).body(data, ct));
+        }
+        MultiPart::alternative().multipart(rel)
+    };
+    let alt = MultiPart::alternative().singlepart(SinglePart::plain(text)).multipart(html_part);
 
     let mut parts: Vec<SinglePart> = vec![];
     for att in &o.attachments {
@@ -81,6 +92,36 @@ pub fn build(a: &Account, o: &Outgoing) -> Result<(Message, Vec<u8>)> {
     msg.headers_mut().insert_raw(HeaderValue::new(HeaderName::new_from_ascii_str("X-Mailer"), "Hermio".into()));
     let raw = msg.formatted();
     Ok((msg, raw))
+}
+
+/// Replace `src="data:image/…;base64,…"` pictures with `cid:` references; returns the new HTML
+/// and the pictures (content id, MIME type, bytes).
+pub fn inline_images(html: &str) -> (String, Vec<(String, String, Vec<u8>)>) {
+    use base64::Engine;
+    let re = regex_lite::Regex::new(r#"(?i)src\s*=\s*(["'])data:(image/[a-z0-9.+-]+);base64,([^"']+)(["'])"#).unwrap();
+    let mut out = String::with_capacity(html.len());
+    let mut parts: Vec<(String, String, Vec<u8>)> = vec![];
+    let mut last = 0;
+    let stamp = chrono::Utc::now().timestamp_millis();
+    for c in re.captures_iter(html) {
+        let whole = c.get(0).unwrap();
+        let b64: String = c[3].chars().filter(|ch| !ch.is_whitespace()).collect();
+        let Ok(data) = base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()) else { continue };
+        // The same picture twice (e.g. a logo) is sent once.
+        let cid = match parts.iter().find(|p| p.2 == data) {
+            Some(p) => p.0.clone(),
+            None => {
+                let cid = format!("img{}.{stamp}@hermio", parts.len() + 1);
+                parts.push((cid.clone(), c[2].to_lowercase(), data));
+                cid
+            }
+        };
+        out.push_str(&html[last..whole.start()]);
+        out.push_str(&format!("src=\"cid:{cid}\""));
+        last = whole.end();
+    }
+    out.push_str(&html[last..]);
+    (out, parts)
 }
 
 /// TLS settings trusting both the bundled Mozilla roots and the Windows certificate store.
@@ -139,4 +180,15 @@ pub async fn test_with(a: &Account, creds: Creds) -> Result<()> {
         return Err(anyhow!("Could not connect to the SMTP server"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn data_images_become_inline_parts() {
+        let (h, p) = super::inline_images(r#"<p>Hi</p><img src="data:image/png;base64,iVBORw0KGgo=" alt=x><img src='data:image/png;base64,iVBORw0KGgo='>"#);
+        assert_eq!(p.len(), 1);
+        assert_eq!(h.matches("cid:img1.").count(), 2);
+        assert!(!h.contains("data:"));
+    }
 }

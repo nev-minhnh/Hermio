@@ -17,6 +17,18 @@ pub fn show(app: &tauri::AppHandle, xml: String, _title: String, _body: String) 
     });
 }
 
+/// Put a toast straight into the notification centre, without a popup on screen (Hermio shows
+/// its own popup for it).
+#[cfg(windows)]
+pub fn show_silent(app: &tauri::AppHandle, xml: String) {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = imp::show_opts(&app2, &xml, true);
+    });
+}
+#[cfg(not(windows))]
+pub fn show_silent(_app: &tauri::AppHandle, _xml: String) {}
+
 #[cfg(windows)]
 mod imp {
     use std::cell::RefCell;
@@ -32,9 +44,16 @@ mod imp {
     }
 
     pub fn show(app: &tauri::AppHandle, xml: &str) -> windows::core::Result<()> {
+        show_opts(app, xml, false)
+    }
+
+    pub fn show_opts(app: &tauri::AppHandle, xml: &str, silent: bool) -> windows::core::Result<()> {
         let doc = XmlDocument::new()?;
         doc.LoadXml(&HSTRING::from(xml))?;
         let toast = ToastNotification::CreateToastNotification(&doc)?;
+        if silent {
+            toast.SetSuppressPopup(true)?;
+        }
         let h = app.clone();
         toast.Activated(&TypedEventHandler::<ToastNotification, IInspectable>::new(move |_, args| {
             if let Some(a) = args.as_ref() {

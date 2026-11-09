@@ -430,6 +430,14 @@
               {/each}
             </div>
           </div>
+          <div class="field badge-opt">
+            <span>{t("Email background")}<br /><span class="muted small">{t("White shows mail as senders designed it. Dark also darkens formatted mail (pictures keep their colours).")}</span></span>
+            <div class="segmented" use:pill>
+              <button class:on={store.settings.mail_bg === "light"} onclick={() => store.set("mail_bg", "light")}>{t("White")}</button>
+              <button class:on={store.settings.mail_bg === "dark"} onclick={() => store.set("mail_bg", "dark")}>{t("Dark")}</button>
+              <button class:on={store.settings.mail_bg === "system"} onclick={() => store.set("mail_bg", "system")}>{t("System")}</button>
+            </div>
+          </div>
           <div class="field">
             <span>{t("Accent color")}</span>
             <div class="colors">
@@ -521,6 +529,19 @@
                 <span class="switch" class:on={store.settings.notify_groups}></span>
                 <span>{t("Also notify for mail sorted into groups")}<br /><span class="muted small">{t("Off: mail that rules or AI put into a group hidden from the inbox arrives quietly.")}</span></span>
               </button>
+              <div class="field badge-opt" transition:slide={{ duration: 180 }}>
+                <span>{t("Notification style")}<br /><span class="muted small">{t("Hermio's popup shows the subject in bold with From and To right under it; a copy still goes to the Windows notification centre. Windows notifications can't use bold.")}</span></span>
+                <div class="segmented" use:pill>
+                  <button class:on={store.settings.notify_style !== "windows"} onclick={() => store.set("notify_style", "hermio")}>{t("Hermio popup")}</button>
+                  <button class:on={store.settings.notify_style === "windows"} onclick={() => store.set("notify_style", "windows")}>{t("Windows")}</button>
+                </div>
+              </div>
+              {#if store.settings.notify_style !== "windows"}
+                <button class="toggle sub" onclick={() => store.set("notify_sound", !store.settings.notify_sound)} transition:slide={{ duration: 180 }}>
+                  <span class="switch" class:on={store.settings.notify_sound}></span>
+                  <span>{t("Play the new-mail sound")}</span>
+                </button>
+              {/if}
             {/if}
             <div class="field badge-opt">
               <span>{t("Unread count on the taskbar icon")}<br /><span class="muted small">{t("All unread mail in the inboxes of every signed-in mailbox. Also shown on the tray icon.")}</span></span>

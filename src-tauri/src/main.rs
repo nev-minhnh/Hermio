@@ -25,6 +25,7 @@ mod state;
 mod notify;
 mod writing;
 mod toast;
+mod popup;
 mod reminders;
 mod invites;
 mod sync;
@@ -198,6 +199,9 @@ fn main() {
             commands::delete_event,
             commands::sync_calendars,
             commands::data_dir,
+            popup::popup_take,
+            popup::popup_layout,
+            popup::popup_open,
             commands::open_url,
             commands::discover_account,
             commands::quick_add_account,

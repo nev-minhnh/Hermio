@@ -84,7 +84,8 @@
       inviteBusy = null;
     }
   }
-  const dark = $derived(document.documentElement.dataset.theme === "dark");
+  // Email background: white unless chosen otherwise in Settings → Appearance.
+  const dark = $derived(store.settings.mail_bg === "dark" || (store.settings.mail_bg === "system" && store.osDark));
   const zoom = $derived(store.settings.reading_zoom || 1);
   const terms = $derived(searchTerms(store.search));
   const files = $derived(body ? body.attachments.filter((a) => !a.inline) : []);
@@ -170,9 +171,15 @@
     const imgs = allowImages ? "data: cid: https: http:" : "data: cid:";
     const fonts = allowImages ? "data: https:" : "data:";
     const isPlain = body.html.startsWith('<div style="white-space:pre-wrap');
-    const fg = isPlain && dark ? "#f2f2f2" : "#1b1b1b";
-    const bg = isPlain && dark ? "#262626" : "#ffffff";
+    // Dark: plain text gets light-on-dark colours; HTML mail (designed for white) is inverted
+    // as a whole, with pictures inverted back so logos and photos keep their colours.
+    const htmlDark = dark && !isPlain;
+    const fg = isPlain && dark ? "#e8ebf5" : "#1b1b1b";
+    const bg = isPlain && dark ? "#1e1e1e" : htmlDark ? "#e1e1e1" : "#ffffff";
     const sb = isPlain && dark ? "rgba(255,255,255,.24)" : "rgba(0,0,0,.22)";
+    const invert = htmlDark
+      ? `html{filter:invert(1) hue-rotate(180deg);}img,video,picture,svg,canvas,iframe,[style*="background-image"],[background]{filter:invert(1) hue-rotate(180deg);}`
+      : "";
     return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${imgs}; style-src 'unsafe-inline' https:; font-src ${fonts}; media-src data:">
 <base target="_blank">
@@ -186,6 +193,7 @@ a{color:${isPlain && dark ? "#7fb5ff" : "#1d4fe0"};}
 blockquote{margin:0 0 0 .5em;padding-left:1em;border-left:3px solid #c8c8c8;color:${isPlain && dark ? "#bbb" : "#555"};}
 table{max-width:100%;}
 mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;}
+${invert}
 ::-webkit-scrollbar{width:12px;height:12px}
 ::-webkit-scrollbar-thumb{background:${sb};border-radius:8px;border:3px solid transparent;background-clip:content-box}
 </style></head><body>${body.html}</body></html>`;
@@ -559,7 +567,7 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
           {/if}
         </div>
 
-        <div class="frame" class:plain={body?.html.startsWith('<div style="white-space:pre-wrap')}>
+        <div class="frame" class:dark>
           {#if error}
             <div class="err" in:fade={{ duration: 160 }}><Icon name="warning" /> {error}</div>
           {:else if !body}
@@ -952,8 +960,8 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
     display: flex;
     position: relative;
   }
-  .frame.plain {
-    background: var(--surface);
+  .frame.dark {
+    background: #1e1e1e;
   }
   .chev {
     display: inline-flex;

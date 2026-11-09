@@ -3,6 +3,24 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.0
+
+- **New-mail popup by Hermio**: bold subject, From / To right under it (half the gap Windows uses), the time on the right; stays 7 s (paused while hovered), click opens the email. It never takes the focus, respects Do not disturb, plays the mail sound (can be turned off), and a silent copy still lands in the Windows notification centre. Settings → Notifications can switch back to plain Windows notifications.
+- **Email background** setting (Appearance): White (default — mail as the sender designed it), Dark (formatted mail is darkened too, pictures keep their colours) or System (follows Windows). Hermio no longer changes it on its own.
+- Drop-down lists (e.g. From in the composer) were light text on a light list in dark mode.
+- POP3 (Gmail): mail you send no longer shows up in that mailbox's Inbox with a notification — it goes to Sent (or is matched with Hermio's own copy there). Mail put in the Inbox by earlier versions is moved.
+- Pictures in the message or signature are sent as inline attachments instead of data: links, so Gmail (web and phone) and other apps show them.
+- **Writing assistant**:
+  - A round button next to "AI Assistant" while you write: a sweeping ring while it checks, then the number of suggestions ringed in the colour of the most serious kind (red/blue/green/purple); "!" with the reason if checking failed.
+  - Its panel opens in the AI assistant's place (the email narrows; the two share the spot).
+  - Check page (text on screen) / Whole document, a Scanning ⇄ Stopped switch (stopped = no checks at all), Pause / Resume with "Scanning the page…" / "Scanning the document… n/total", Check as you type in the panel.
+  - Typing checks only what's on screen; unchanged paragraphs are never sent again; no checks while scrolling (1 s after it stops); an edited paragraph keeps its earlier suggestions until the new ones arrive.
+  - Clicking a suggestion in the panel highlights its text in the email and scrolls to it.
+  - The hover card doesn't appear when a menu, dialog or popup covers the text.
+  - Right-click in the email: Meaning, Translate, Ask AI, Cut, Copy, Paste.
+  - If the chosen AI provider isn't connected, the first connected one is used.
+- Smoother panels: the AI assistant panel slides with transform/opacity only instead of re-laying out the mail area on every frame.
+
 ## 0.7.5
 
 - Notifications show the Hermio icon again. Since 0.7.3 the icon file Windows was told to use sat in the data folder, which moved (and may be synced by OneDrive), so Windows showed no icon. It now lives in local AppData under a new name.

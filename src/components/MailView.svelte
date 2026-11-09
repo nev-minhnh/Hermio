@@ -82,6 +82,8 @@
       {/if}
     </div>
     {#if store.aiOpen}<AiPanel />{/if}
+    <!-- The writing assistant's panel is placed here (same place as the AI assistant). -->
+    <div id="wa-slot"></div>
     </div>
   </section>
 </div>
@@ -146,5 +148,8 @@
     flex: 1;
     min-width: 0;
     display: flex;
+  }
+  #wa-slot {
+    display: contents;
   }
 </style>

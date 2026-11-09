@@ -239,6 +239,10 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 30));
   switch (cmd) {
     case "get_settings": return settings;
+    case "popup_take": { const k = (globalThis as any).__popupTaken; (globalThis as any).__popupTaken = true; return k ? [] : [
+      { key: "a", subject: "Có phải bạn vừa đăng nhập từ thiết bị mới ở gần Phúc Lý không?", from: "security@facebookmail.com", to: "minhnh.mad@gmail.com", time: "1:02 AM", launch: "msg:1:1", from_label: "From:", to_label: "To:" },
+      { key: "b", subject: "Thử logo lần 2", from: "huu.nguyen2@monash.edu", to: "l33zin3@gmail.com", time: "1:08 AM", launch: "msg:2:1", from_label: "From:", to_label: "To:" }]; }
+    case "popup_layout": case "popup_open": return null;
     case "set_setting": settings[a.key] = a.value; return null;
     case "google_config": return { client_id: "1234.apps.googleusercontent.com", has_secret: true };
     case "list_accounts": return accounts;

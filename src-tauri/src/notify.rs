@@ -139,7 +139,7 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
         for m in items {
             let subject = subj(m);
             let from = clip(&m.from_line(), 60);
-            show(state, &mail_xml(&subject, &when(m.date, vi), &from, account, &format!("msg:{}:{account_id}", m.id), &w), &subject, &plain(&from));
+            announce(state, &subject, &when(m.date, vi), &from, account, &format!("msg:{}:{account_id}", m.id), &w, &plain(&from));
         }
     } else {
         let mut senders: Vec<String> = vec![];
@@ -155,17 +155,44 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
         let more = if vi { format!("(+{} thư khác)", items.len() - 1) } else { format!("(+{} more)", items.len() - 1) };
         let subject = format!("{} {more}", subj(newest));
         let from = clip(&names, 60);
-        show(state, &mail_xml(&subject, &when(newest.date, vi), &from, account, &format!("msg:{}:{account_id}", newest.id), &w), &subject, &plain(&from));
+        announce(state, &subject, &when(newest.date, vi), &from, account, &format!("msg:{}:{account_id}", newest.id), &w, &plain(&from));
     }
 }
 
-/// A sample new-mail toast (Settings → "Send a test notification").
+/// One new-mail notice: Hermio's popup (bold subject, compact) plus a silent copy in the
+/// notification centre, or — if chosen in Settings — a regular Windows toast.
+#[allow(clippy::too_many_arguments)]
+fn announce(state: &AppState, subject: &str, time: &str, from: &str, to: &str, launch: &str, w: &Words, plain: &str) {
+    let xml = mail_xml(subject, time, from, to, launch, w);
+    let style = state.db.get_setting("notify_style").ok().flatten().unwrap_or_default();
+    if style.trim_matches('"') == "windows" {
+        show(state, &xml, subject, plain);
+        return;
+    }
+    // History in the notification centre, without a second popup on screen.
+    crate::toast::show_silent(&state.app, xml);
+    if crate::popup::quiet_hours() {
+        return;
+    }
+    let item = crate::popup::PopupItem {
+        key: format!("{launch}:{}", chrono::Utc::now().timestamp_millis()),
+        subject: subject.to_string(),
+        from: from.to_string(),
+        to: to.to_string(),
+        time: time.to_string(),
+        launch: launch.to_string(),
+        from_label: w.from.to_string(),
+        to_label: w.to.to_string(),
+    };
+    crate::popup::push(&state.app, item, setting_bool(state, "notify_sound", true));
+}
+
+/// A sample new-mail notice (Settings → "Send a test notification").
 pub fn test(state: &AppState) {
     let vi = vi(state);
     let w = words(vi);
     let subject = if vi { "Thông báo thử của Hermio".to_string() } else { "Hermio notification test".to_string() };
-    let xml = mail_xml(&subject, &when(chrono::Utc::now().timestamp(), vi), "hermio@localhost", "you@example.com", "test", &w);
-    show(state, &xml, &subject, &format!("{} hermio@localhost\n{} you@example.com", w.from, w.to));
+    announce(state, &subject, &when(chrono::Utc::now().timestamp(), vi), "hermio@localhost", "you@example.com", "test", &w, &format!("{} hermio@localhost\n{} you@example.com", w.from, w.to));
 }
 
 /// "2 h", "1 h 30 min", "15 min" (or Vietnamese).

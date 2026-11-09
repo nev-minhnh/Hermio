@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CAT_COLOR } from "../lib/writing";
   import { t } from "../lib/i18n.svelte";
   import { onMount } from "svelte";
   import Icon from "../lib/Icon.svelte";
@@ -83,6 +84,27 @@
   </div>
 
   <div class="right" data-tauri-drag-region>
+    {#if store.wa.active && store.route === "mail"}
+      {@const w = store.wa}
+      {@const ringC = w.error ? "#e5484d" : w.worst ? CAT_COLOR[w.worst as keyof typeof CAT_COLOR] : "#e8b931"}
+      <button
+        class="wa-btn"
+        class:busy={w.busy}
+        class:on={store.waOpen && !store.aiOpen}
+        class:off={!w.enabled}
+        style:--rc={ringC}
+        style:--p={w.progress ? Math.round((w.progress[0] / Math.max(1, w.progress[1])) * 100) : 28}
+        title={w.error ? t("Writing assistant: {err}", { err: w.error }) : !w.enabled ? t("Writing assistant (scanning stopped)") : w.busy ? t("Writing assistant: checking…") : t("Writing assistant: {n} suggestions", { n: w.count })}
+        onclick={() => { const open = !(store.waOpen && !store.aiOpen); store.aiOpen = false; store.waOpen = open; }}
+        transition:scale={{ start: 0.6, duration: 180 }}
+      >
+        <span class="wa-face">
+          {#if w.error}<b>!</b>
+          {:else if w.count && !w.busy}<b>{Math.min(99, w.count)}</b>
+          {:else}<Icon name="penCheck" size={15} />{/if}
+        </span>
+      </button>
+    {/if}
     <button class="ai-btn" class:on={store.aiOpen} title={t("AI assistant (Ctrl+J)")} onclick={() => { store.route = "mail"; store.aiOpen = !store.aiOpen; }}>
       <span>✦</span> {t("AI Assistant")}
     </button>
@@ -192,6 +214,56 @@
     font-size: 0.86rem;
     margin-right: 4px;
     transition: background var(--dur);
+  }
+  /* The writing assistant's round button: a ring in the colour of the most serious kind of
+     suggestion (gold when there are none), a sweeping arc while it checks. */
+  .wa-btn {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    margin-right: 8px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    background: conic-gradient(var(--rc) 0 100%);
+    display: grid;
+    place-items: center;
+    transition: transform 160ms var(--ease), box-shadow 160ms;
+    flex: none;
+  }
+  .wa-btn:hover {
+    transform: scale(1.06);
+  }
+  .wa-btn.on {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rc) 30%, transparent);
+  }
+  .wa-btn.off {
+    filter: grayscale(1) opacity(0.65);
+  }
+  .wa-btn.busy {
+    background: conic-gradient(var(--rc) calc(var(--p) * 1%), color-mix(in srgb, var(--rc) 22%, transparent) 0);
+    animation: wa-spin 1s linear infinite;
+  }
+  .wa-btn.busy .wa-face {
+    animation: wa-spin 1s linear infinite reverse;
+  }
+  @keyframes wa-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .wa-face {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #0d1838;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 12.5px;
+  }
+  .wa-face :global(.icon) {
+    color: var(--rc);
   }
   .ai-btn span {
     color: var(--ai);

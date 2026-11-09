@@ -26,6 +26,8 @@ export interface AssistOpen {
 
 export interface Settings {
   theme: "system" | "light" | "dark";
+  /** Background of the email being read: white (as senders design them), dark, or like the app. */
+  mail_bg: "light" | "dark" | "system";
   accent: string;
   density: "comfortable" | "compact";
   font_scale: number;
@@ -36,6 +38,9 @@ export interface Settings {
   mark_read_delay: number; // seconds, -1 = never automatically
   remote_images: "ask" | "always" | "never";
   notifications: boolean;
+  /** New mail shown in Hermio's own popup (bold subject) or as a plain Windows notification. */
+  notify_style: "hermio" | "windows";
+  notify_sound: boolean;
   /** Also notify for new mail that goes straight into a group hidden from the inbox. */
   notify_groups: boolean;
   /** Unread count on the taskbar / tray icon: number, a dot, or nothing. */
@@ -47,6 +52,8 @@ export interface Settings {
   // ---- writing assistant (composer) and Ask AI / Translate / Meaning popup ----
   /** Check as you type (every check is a request to the provider). */
   writing_auto: boolean;
+  /** Scanning on (the panel's Scanning / Stopped switch). Off: no checks at all, typing included. */
+  writing_scan: boolean;
   writing_delay_ms: number;
   writing_goals: Goals;
   /** Words never flagged. */
@@ -91,6 +98,7 @@ export interface Settings {
 
 export const defaults: Settings = {
   theme: "system",
+  mail_bg: "light",
   accent: "#1d4fe0",
   density: "comfortable",
   font_scale: 1,
@@ -101,9 +109,12 @@ export const defaults: Settings = {
   mark_read_delay: 1,
   remote_images: "ask",
   notifications: true,
+  notify_style: "hermio",
+  notify_sound: true,
   notify_groups: false,
   reminders: true,
   writing_auto: true,
+  writing_scan: true,
   writing_delay_ms: 1500,
   writing_goals: { ...DEFAULT_GOALS },
   writing_dictionary: [],
@@ -185,6 +196,12 @@ class Store {
   spaces = $state<Space[]>([]);
   groups = $state<Group[]>([]);
   aiOpen = $state(false);
+  /** The writing-assistant panel (it takes the AI assistant's place on the right). */
+  waOpen = $state(false);
+  /** What the writing assistant in the open composer reports (for its round button). */
+  wa = $state<{ active: boolean; count: number; worst: string | null; busy: boolean; progress: [number, number] | null; error: string; enabled: boolean }>({
+    active: false, count: 0, worst: null, busy: false, progress: null, error: "", enabled: true,
+  });
   aiIntent = $state<AiIntent | null>(null);
   ruleDraft = $state<{ from?: string; subject?: string } | null>(null);
   view = $state("unified:inbox");
@@ -211,6 +228,10 @@ class Store {
   selected = $state<number[]>([]);
   anchor = $state<number | null>(null);
   compose = $state<ComposeInit | null>(null);
+  /** The app is in dark mode (chosen, or following Windows). */
+  isDark = $state(false);
+  /** Windows is in dark mode. */
+  osDark = $state(false);
   /** Full backup / restore / copy from an older copy: kept here so leaving Settings doesn't lose it. */
   dataJob = $state<{ kind: "backup" | "restore"; prog: { stage: string; done: number; total: number } | null } | null>(null);
   dataStaged = $state<string | null>(null);
@@ -347,6 +368,8 @@ class Store {
     const s = this.settings;
     const dark = s.theme === "dark" || (s.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     root.dataset.theme = dark ? "dark" : "light";
+    this.isDark = dark;
+    this.osDark = matchMedia("(prefers-color-scheme: dark)").matches;
     root.dataset.density = s.density;
     root.style.setProperty("--accent", s.accent);
     root.style.setProperty("--font-scale", String(s.font_scale));

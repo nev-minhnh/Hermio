@@ -176,8 +176,9 @@ export function run(system: string, prompt: string, m = assistModel()): [Promise
   const id = `write:${Date.now()}:${++seq}`;
   const p = (async () => {
     let provider = m.provider;
-    // Nothing chosen yet: the first connected provider.
-    if (!provider) provider = (await api.aiProviders())[0]?.id ?? "";
+    // Nothing chosen, or the chosen one isn't connected (any more): the first connected provider.
+    const list = await api.aiProviders().catch(() => []);
+    if (!provider || (list.length && !list.some((p) => p.id === provider))) provider = list[0]?.id ?? "";
     if (!provider) throw new Error("Connect an AI provider in Settings › AI assistant first.");
     return api.aiComplete(provider, m.model || null, m.thinking, system, prompt, id);
   })();

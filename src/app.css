@@ -117,6 +117,18 @@ textarea {
   color: inherit;
 }
 
+/* Native drop-down lists: the open list is drawn by the system; give its options the app's
+   colours so they never come out light text on a light list (or the reverse). */
+select option,
+select optgroup {
+  background-color: var(--surface);
+  color: var(--text);
+}
+select option:checked {
+  background-color: var(--selected-strong);
+  color: var(--text);
+}
+
 button {
   cursor: default;
 }

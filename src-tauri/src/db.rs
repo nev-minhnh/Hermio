@@ -573,6 +573,48 @@ impl Db {
             Ok(())
         })
     }
+    /// A message downloaded over POP3 that is our own sent copy (`message_id`): if Hermio already
+    /// keeps a local copy in Sent, that copy takes the server key (so it isn't downloaded again)
+    /// and true is returned.
+    pub fn claim_local_copy(&self, folder_id: i64, message_id: &str, remote_key: &str) -> Result<bool> {
+        if message_id.is_empty() {
+            return Ok(false);
+        }
+        let n = self.with(|c| {
+            c.execute(
+                "UPDATE messages SET remote_key=?3 WHERE id = (SELECT id FROM messages WHERE folder_id=?1 AND message_id=?2 AND remote_key='' LIMIT 1)",
+                params![folder_id, message_id, remote_key],
+            )
+        })?;
+        Ok(n > 0)
+    }
+    /// Mail we sent that POP3 (Gmail) put in the inbox: into Sent, or dropped when Sent already
+    /// has our local copy (which then takes its server key). Returns how many were fixed.
+    pub fn fix_pop_sent(&self, account_id: i64, email: &str, inbox_id: i64, sent_id: i64) -> Result<usize> {
+        let email = email.trim().to_lowercase();
+        if email.is_empty() {
+            return Ok(0);
+        }
+        let rows: Vec<(i64, String, String, String)> = self.with(|c| {
+            let mut st = c.prepare(
+                "SELECT id, message_id, remote_key, raw_path FROM messages WHERE account_id=?1 AND folder_id=?2 AND lower(from_addr)=?3
+                   AND instr(lower(to_list || ' ' || cc_list), ?3) = 0",
+            )?;
+            let r = st.query_map(params![account_id, inbox_id, email], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            r.collect()
+        })?;
+        for (id, mid, key, path) in &rows {
+            if self.claim_local_copy(sent_id, mid, key)? {
+                self.delete_messages(&[*id])?;
+                if !path.is_empty() {
+                    let _ = std::fs::remove_file(path);
+                }
+            } else {
+                self.with(|c| c.execute("UPDATE messages SET folder_id=?2, seen=1 WHERE id=?1", params![id, sent_id]))?;
+            }
+        }
+        Ok(rows.len())
+    }
     pub fn move_local(&self, id: i64, folder_id: i64) -> Result<()> {
         self.with(|c| c.execute("UPDATE messages SET folder_id=?2 WHERE id=?1", params![id, folder_id]))?;
         Ok(())

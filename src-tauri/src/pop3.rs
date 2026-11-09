@@ -146,6 +146,14 @@ fn key_file(uidl: &str) -> String {
 pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
     ensure_local_folders(state, a.id)?;
     let inbox = state.db.folder_by_role(a.id, "inbox")?.ok_or_else(|| anyhow!("missing inbox"))?;
+    let sent = state.db.folder_by_role(a.id, "sent")?.ok_or_else(|| anyhow!("missing sent folder"))?;
+    // Gmail's POP3 also hands out the mail you send: earlier versions put it in the inbox.
+    if let Ok(n) = state.db.fix_pop_sent(a.id, &a.email, inbox.id, sent.id) {
+        if n > 0 {
+            crate::sync::log(state, a, "info", format!("Moved {n} message(s) you sent from Inbox to Sent"));
+        }
+    }
+    let me = a.email.trim().to_lowercase();
     let root = data_dir(state, a);
     std::fs::create_dir_all(&root).with_context(|| format!("Could not create folder {}", root.display()))?;
 
@@ -193,6 +201,26 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
         }
         let raw = pop.multiline().await?;
         let mut m = parse::summarize(&raw, true);
+        // Mail this mailbox sent (Gmail's POP3 includes it): it belongs in Sent and isn't news.
+        let own = !me.is_empty() && m.from_addr.trim().to_lowercase() == me && !format!("{} {}", m.to_list, m.cc_list).to_lowercase().contains(&me);
+        if own {
+            if !state.db.claim_local_copy(sent.id, &m.message_id, &uidl)? {
+                let dir = root.join("Sent");
+                std::fs::create_dir_all(&dir)?;
+                let path = dir.join(format!("{}.eml", key_file(&uidl)));
+                std::fs::write(&path, &raw)?;
+                m.account_id = a.id;
+                m.folder_id = sent.id;
+                m.remote_key = uidl.clone();
+                m.raw_path = path.to_string_lossy().to_string();
+                m.seen = true;
+                state.db.insert_message(&m)?;
+            }
+            if !a.pop3_leave_on_server {
+                let _ = pop.cmd(&format!("DELE {n}")).await;
+            }
+            continue;
+        }
         let month = chrono::DateTime::from_timestamp(m.date, 0)
             .map(|d| d.format("%Y-%m").to_string())
             .unwrap_or_else(|| "unknown".into());

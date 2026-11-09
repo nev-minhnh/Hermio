@@ -14,6 +14,7 @@
   import { onDestroy, onMount } from "svelte";
   import { fade, fly, scale } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
+  import { flip } from "svelte/animate";
   import { t } from "../lib/i18n.svelte";
   import Icon from "../lib/Icon.svelte";
   import { store } from "../lib/store.svelte";
@@ -40,9 +41,20 @@
     type Issue,
   } from "../lib/writing";
   import ModelPicker from "./ModelPicker.svelte";
+  import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import { portal } from "../lib/motion";
 
   let { el }: { el: HTMLDivElement | undefined } = $props();
+
+  /** The panel is shown in the mail view's side slot (where the AI assistant's panel goes). */
+  function intoSlot(node: HTMLElement) {
+    (document.getElementById("wa-slot") ?? document.body).appendChild(node);
+    return { destroy: () => node.remove() };
+  }
+  /** Slide in with a transform only (no layout work per frame). */
+  function slideIn(_node: HTMLElement) {
+    return { duration: 220, easing: cubicOut, css: (k: number) => `transform:translateX(${(1 - k) * 24}px);opacity:${k}` };
+  }
 
   // ---------- 1. collect ----------
   interface Unit {
@@ -58,8 +70,19 @@
   let busy = $state(false);
   let error = $state("");
   let stopCheck: (() => void) | null = null;
+  /** The scan in progress: what it covers and how far it got (document scans). */
+  let scope = $state<"page" | "doc" | null>(null);
+  let progress = $state<[number, number] | null>(null);
+  let paused = $state(false);
+  /** The suggestion picked in the panel: its text is highlighted in the email. */
+  let focused = $state<string | null>(null);
+  /** Last checked version of each paragraph (by its first node): while an edited paragraph is
+   *  checked again, its earlier suggestions stay (those whose text is still there). */
+  const lastHash = new WeakMap<Node, string>();
+  const enabled = $derived(store.settings.writing_scan !== false);
 
-  let panel = $state(false);
+  // The panel sits where the AI assistant's panel does (the slot in the mail view).
+  const panel = $derived(store.waOpen && !store.aiOpen);
   let tab = $state<"suggestions" | "goals" | "write" | "report">("suggestions");
   let filter = $state<Cat | null>(null);
   let expanded = $state<string | null>(null);
@@ -134,68 +157,140 @@
   }
 
   // ---------- 2. analyse ----------
-  let again = false;
-  async function check(all = true) {
+  /** The scrolling box around the editor. */
+  const scroller = () => (el?.closest(".scroll") as HTMLElement | null) ?? el ?? null;
+  /** Paragraphs at least partly on screen. */
+  function visibleUnits(list: Unit[]): Unit[] {
+    const sc = scroller();
+    if (!sc) return list;
+    const box = sc.getBoundingClientRect();
+    return list.filter((u) => {
+      const r = rangeFor(u, 0, u.text.length)?.getBoundingClientRect();
+      return !r || (r.bottom >= box.top - 40 && r.top <= box.bottom + 40);
+    });
+  }
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  let again: "page" | "doc" | null = null;
+  /**
+   * Check paragraphs that changed: "page" = those on screen (also what typing checks), "doc" =
+   * the whole email. A paragraph already checked and unchanged is never sent again.
+   */
+  async function check(what: "page" | "doc" = "page") {
+    if (!enabled) return;
     if (busy) {
       // Typing during a check: check the new text right after.
-      again = true;
+      if (again !== "doc") again = what;
+      return;
+    }
+    if (scrolling) {
+      pendingAfterScroll = true;
       return;
     }
     units = collectUnits();
     error = "";
-    do {
-      let size = 0;
-      const todo: Unit[] = [];
-      for (const u of units) {
-        if (checked[u.hash] || pending.has(u.hash) || todo.some((x) => x.hash === u.hash)) continue;
-        if (todo.length >= 24 || size + u.text.length > 7000) break;
-        todo.push(u);
-        size += u.text.length;
+    const pool = what === "doc" ? units : visibleUnits(units);
+    const todoAll = pool.filter((u, i) => !checked[u.hash] && pool.findIndex((x) => x.hash === u.hash) === i);
+    if (!todoAll.length) {
+      measure();
+      return;
+    }
+    scope = what;
+    progress = what === "doc" ? [0, todoAll.length] : null;
+    busy = true;
+    let done = 0;
+    try {
+      while (done < todoAll.length) {
+        while (paused && enabled) await sleep(200);
+        if (!enabled) break;
+        let size = 0;
+        const todo: Unit[] = [];
+        for (const u of todoAll.slice(done)) {
+          if (todo.length >= 24 || (todo.length && size + u.text.length > 7000)) break;
+          todo.push(u);
+          size += u.text.length;
+        }
+        todo.forEach((u) => pending.add(u.hash));
+        try {
+          const [p, stop] = run(checkSystem(goals, dict), todo.map((u, i) => `[${i + 1}] ${u.text}`).join("\n\n"));
+          stopCheck = stop;
+          const { issues, tone: tn } = parseBatch(await p, todo.map((u) => u.text));
+          const next = { ...checked };
+          todo.forEach((u, i) => {
+            next[u.hash] = issues[i];
+            if (u.nodes[0]) lastHash.set(u.nodes[0], u.hash);
+          });
+          checked = next;
+          if (tn) tone = tn;
+        } finally {
+          todo.forEach((u) => pending.delete(u.hash));
+          stopCheck = null;
+        }
+        done += todo.length;
+        if (progress) progress = [done, progress[1]];
+        units = collectUnits();
       }
-      if (!todo.length) break;
-      todo.forEach((u) => pending.add(u.hash));
-      busy = true;
-      try {
-        const [p, stop] = run(checkSystem(goals, dict), todo.map((u, i) => `[${i + 1}] ${u.text}`).join("\n\n"));
-        stopCheck = stop;
-        const { issues, tone: tn } = parseBatch(await p, todo.map((u) => u.text));
-        const next = { ...checked };
-        todo.forEach((u, i) => (next[u.hash] = issues[i]));
-        checked = next;
-        if (tn) tone = tn;
-      } catch (e) {
-        error = String(e).replace(/^Error: /, "");
-        all = false;
-      } finally {
-        todo.forEach((u) => pending.delete(u.hash));
-        busy = false;
-        stopCheck = null;
-      }
-      units = collectUnits();
-    } while (all);
+    } catch (e) {
+      if (enabled) error = String(e).replace(/^Error: /, "");
+    } finally {
+      busy = false;
+      scope = null;
+      progress = null;
+    }
     measure();
-    if (again) {
-      again = false;
-      if (store.settings.writing_auto) setTimeout(() => check(true), 300);
+    if (again && enabled) {
+      const w = again;
+      again = null;
+      setTimeout(() => check(w), 300);
     }
   }
-  function stop() {
-    stopCheck?.();
+  /** The Scanning / Stopped switch: off stops at once and nothing is checked any more. */
+  function setEnabled(on: boolean) {
+    store.set("writing_scan", on);
+    if (!on) {
+      stopCheck?.();
+      clearTimeout(typeTimer);
+      again = null;
+      paused = false;
+    }
+  }
+  /** Scan page / whole email (also turns scanning back on). */
+  function scan(what: "page" | "doc") {
+    if (!enabled) store.set("writing_scan", true);
+    paused = false;
+    setTimeout(() => check(what), 0);
   }
 
-  // As you type (off by default: every check is a request to the provider).
+  // As you type: the paragraphs on screen, after a pause in typing.
   let typeTimer: ReturnType<typeof setTimeout> | undefined;
   let collectTimer: ReturnType<typeof setTimeout> | undefined;
   function onInput() {
+    focused = null;
     clearTimeout(collectTimer);
     collectTimer = setTimeout(() => {
       units = collectUnits();
       measure();
     }, 120);
-    if (store.settings.writing_auto) {
+    if (store.settings.writing_auto && enabled) {
       clearTimeout(typeTimer);
-      typeTimer = setTimeout(() => check(true), Math.max(600, store.settings.writing_delay_ms || 1500));
+      typeTimer = setTimeout(() => check("page"), Math.max(600, store.settings.writing_delay_ms || 1500));
     }
+  }
+  // No checks while scrolling: one second after the scrolling stops, what came on screen.
+  let scrolling = false;
+  let pendingAfterScroll = false;
+  let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  function onScroll() {
+    measure();
+    scrolling = true;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      scrolling = false;
+      if (enabled && (pendingAfterScroll || store.settings.writing_auto)) {
+        pendingAfterScroll = false;
+        check("page");
+      }
+    }, 1000);
   }
 
   // ---------- 3. suggest ----------
@@ -208,7 +303,9 @@
     const d = new Set(dict.map((w) => w.toLowerCase()));
     const out: Shown[] = [];
     for (const u of units) {
-      for (const issue of checked[u.hash] ?? []) {
+      // Not checked yet in this version: its earlier suggestions whose text is still there.
+      const prev = u.nodes[0] ? lastHash.get(u.nodes[0]) : undefined;
+      for (const issue of checked[u.hash] ?? (prev ? checked[prev] : undefined) ?? []) {
         const id = `${u.hash}|${issue.original}`;
         if (dismissed.has(id) || d.has(issue.original.trim().toLowerCase()) || !u.text.includes(issue.original)) continue;
         out.push({ unit: u, issue, id });
@@ -262,7 +359,10 @@
       clearTimeout(hideTimer);
       return;
     }
-    for (const m of marks) {
+    // Nothing on top of the text (a menu, dialog, popup or Settings): no card.
+    const top = document.elementFromPoint(e.clientX, e.clientY);
+    const overText = !!top && !!el && (top === el || el.contains(top));
+    for (const m of overText ? marks : []) {
       const r = m.rects.find((r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 1 && e.clientY <= r.bottom + 3);
       if (r) {
         clearTimeout(hideTimer);
@@ -310,12 +410,21 @@
     store.success(t("“{word}” added to your dictionary", { word: w }));
     hover = null;
   }
+  /** Picked in the panel: open it, bring its text into view and highlight it there. */
   function focusIssue(s: Shown) {
     expanded = s.id;
+    focused = s.id;
     const i = s.unit.text.indexOf(s.issue.original);
     const r = i >= 0 ? rangeFor(s.unit, i, i + s.issue.original.length) : null;
-    const node = r?.startContainer.parentElement;
-    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const sc = scroller();
+    const rr = r?.getBoundingClientRect();
+    if (sc && rr) {
+      const box = sc.getBoundingClientRect();
+      if (rr.top < box.top + 40 || rr.bottom > box.bottom - 40) {
+        sc.scrollBy({ top: rr.top - box.top - box.height / 2, behavior: "smooth" });
+      }
+    }
+    measure();
   }
 
   // ---------- selection, Ask AI / Translate / Meaning ----------
@@ -379,9 +488,10 @@
   }
   /** Check writing: open the panel and check everything. */
   export function checkWriting() {
-    panel = true;
+    store.aiOpen = false;
+    store.waOpen = true;
     tab = "suggestions";
-    check(true);
+    scan("doc");
   }
 
   function onKey(e: KeyboardEvent) {
@@ -402,6 +512,28 @@
       if (!s || s.split(/\s+/).length > 3 || s.length > 48) return;
       assist("define", e.clientX, e.clientY);
     }, 0);
+  }
+
+  // Right-click in the email: Meaning / Translate / Ask AI, plus cut, copy and paste.
+  let ctx = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  function onCtx(e: MouseEvent) {
+    e.preventDefault();
+    onSelection();
+    const { clientX: x, clientY: y } = e;
+    const sel = window.getSelection()?.toString() ?? "";
+    ctx = {
+      x,
+      y,
+      items: [
+        { icon: "book", label: t("Meaning (Ctrl+Alt+D)"), run: () => assist("define", x, y) },
+        { icon: "language", label: t("Translate (Ctrl+Alt+T)"), run: () => assist("translate", x, y) },
+        { icon: "sparkle", label: t("Ask AI (Ctrl+Alt+K)"), run: () => assist("ask", x, y) },
+        { sep: true },
+        { label: t("Cut"), disabled: !sel, run: () => (el?.focus(), document.execCommand("cut")) },
+        { icon: "copy", label: t("Copy"), disabled: !sel, run: () => navigator.clipboard.writeText(sel).catch(() => {}) },
+        { label: t("Paste"), run: async () => { const txt = await navigator.clipboard.readText().catch(() => ""); if (txt) { el?.focus(); if (lastRange) { const s = window.getSelection()!; s.removeAllRanges(); s.addRange(lastRange); } document.execCommand("insertText", false, txt); } } },
+      ],
+    };
   }
 
   // ---------- 4. write with AI ----------
@@ -449,32 +581,35 @@
     if (!e) return;
     if (store.settings.writing_auto) {
       clearTimeout(firstCheck);
-      firstCheck = setTimeout(() => units.length && check(true), 1200);
+      firstCheck = setTimeout(() => units.length && check("page"), 1200);
     }
     e.addEventListener("input", onInput);
     e.addEventListener("keydown", onKey);
     e.addEventListener("dblclick", onDbl);
+    e.addEventListener("contextmenu", onCtx);
     units = collectUnits();
-    // Always on while writing: what's already there (an AI draft, a reply you started) is checked
-    // as soon as the composer opens; after that, each paragraph you change after a pause in typing.
-    if (store.settings.writing_auto) {
-      clearTimeout(typeTimer);
-      typeTimer = setTimeout(() => check(true), 1200);
-    }
     return () => {
       e.removeEventListener("input", onInput);
       e.removeEventListener("keydown", onKey);
       e.removeEventListener("dblclick", onDbl);
+      e.removeEventListener("contextmenu", onCtx);
     };
   });
   onMount(() => {
     document.addEventListener("selectionchange", onSelection);
-    window.addEventListener("scroll", measure, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", measure);
   });
+  // Tell the round button in the title bar what's going on.
+  $effect(() => {
+    store.wa = { active: true, count: shown.length, worst, busy, progress, error, enabled };
+  });
   onDestroy(() => {
+    store.wa = { ...store.wa, active: false, busy: false };
+    store.waOpen = false;
+    clearTimeout(scrollTimer);
     document.removeEventListener("selectionchange", onSelection);
-    window.removeEventListener("scroll", measure, true);
+    window.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("resize", measure);
     cancelAnimationFrame(raf);
     clearTimeout(typeTimer);
@@ -503,11 +638,13 @@
 
 <svelte:window onpointermove={onMove} />
 
+{#if ctx}<ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onclose={() => (ctx = null)} />{/if}
+
 <!-- Underlines -->
 <div class="marks" use:portal style:clip-path="inset({clip.top}px calc(100vw - {clip.right}px) calc(100vh - {clip.bottom}px) {clip.left}px)">
   {#each marks as m (m.s.id)}
     {#each m.rects as r}
-      <span class="mark" class:on={hover?.s.id === m.s.id} style:left="{r.left}px" style:top="{r.top}px" style:width="{r.width}px" style:height="{r.height}px" style:--c={CAT_COLOR[m.s.issue.cat]}></span>
+      <span class="mark" class:on={hover?.s.id === m.s.id} class:focus={focused === m.s.id} style:left="{r.left}px" style:top="{r.top}px" style:width="{r.width}px" style:height="{r.height}px" style:--c={CAT_COLOR[m.s.issue.cat]}></span>
     {/each}
   {/each}
 </div>
@@ -516,7 +653,7 @@
 {#if hover && cardPos}
   <div class="card wa-card" use:portal bind:this={cardEl} style:left="{cardPos.x}px" style:top="{cardPos.y}px" transition:fly={{ y: 4, duration: 150 }}>
     {@render issueBody(hover.s, true)}
-    {#if !panel}<button class="btn sm ghost wide" onclick={() => ((panel = true), (hover = null))}><Icon name="sparkle" size={14} />{t("Open the writing panel")}</button>{/if}
+    {#if !panel}<button class="btn sm ghost wide" onclick={() => ((store.aiOpen = false), (store.waOpen = true), (hover = null))}><Icon name="penCheck" size={14} />{t("Open the writing panel")}</button>{/if}
   </div>
 {/if}
 
@@ -537,19 +674,12 @@
   </div>
 {/snippet}
 
-<!-- Grammarly's round button: the number of suggestions, ringed by the most serious kind -->
-{#if !panel}
-  <button class="fab" style:--ring={worst ? CAT_COLOR[worst] : "#e8b931"} class:busy onclick={() => (panel = true)} title={t("Writing assistant")} transition:scale={{ start: 0.6, duration: 200 }}>
-    {#if shown.length}<span>{Math.min(99, shown.length)}</span>{:else}<span class="spark">✦</span>{/if}
-  </button>
-{/if}
-
 {#if panel}
-  <aside class="wa-panel" transition:fly={{ x: 40, duration: 240, easing: cubicOut }}>
+  <aside class="wa-panel" use:intoSlot transition:slideIn>
     <header>
-      <span class="spark">✦</span><b>{t("Writing assistant")}</b>
+      <span class="hicon"><Icon name="penCheck" size={17} /></span><b>{t("Writing assistant")}</b>
       <span class="grow"></span>
-      <button class="icon-btn" title={t("Close")} onclick={() => (panel = false)}><Icon name="close" size={15} /></button>
+      <button class="icon-btn" title={t("Close")} onclick={() => (store.waOpen = false)}><Icon name="close" size={15} /></button>
     </header>
     <div class="pbody">
       <div class="top">
@@ -560,13 +690,30 @@
           <b>{t("Overall score")}</b>
           <div class="muted small">{t("{n} suggestions · {c} of {t} paragraphs checked", { n: shown.length, c: units.filter((u) => checked[u.hash]).length, t: units.length })}</div>
         </div>
-        {#if busy}
-          <button class="btn sm" onclick={stop}><span class="spinner"></span>{t("Stop")}</button>
-        {:else}
-          <button class="btn sm primary" onclick={() => check(true)}>{t("Check now")}</button>
-        {/if}
       </div>
+      <div class="scanrow">
+        <button class="btn sm primary" disabled={busy} onclick={() => scan("page")} title={t("Check the text on screen")}>{t("Check page")}</button>
+        <button class="btn sm" disabled={busy} onclick={() => scan("doc")} title={t("Check the whole email")}>{t("Whole document")}</button>
+        <span class="grow"></span>
+        <button class="pillbtn" class:on={enabled} onclick={() => setEnabled(!enabled)} title={enabled ? t("Stop scanning: no more checks, also not while typing") : t("Start scanning again")}>
+          <i></i>{enabled ? t("Scanning") : t("Stopped")}
+        </button>
+      </div>
+      {#if busy}
+        <div class="status small" transition:fade={{ duration: 120 }}>
+          <span class="spinner"></span>
+          <span class="grow">
+            {#if paused}{t("Paused")}
+            {:else if scope === "doc" && progress}{t("Scanning the document… {n}/{total}", { n: progress[0], total: progress[1] })}
+            {:else}{t("Scanning the page…")}{/if}
+          </span>
+          <button class="btn sm" onclick={() => (paused = !paused)}>{paused ? t("Resume") : t("Pause")}</button>
+        </div>
+      {/if}
       <ModelPicker compact />
+      <button class="pillbtn auto" class:on={store.settings.writing_auto} onclick={() => store.set("writing_auto", !store.settings.writing_auto)} title={t("Check the paragraphs on screen after each pause in typing")}>
+        <i></i>{t("Check as you type")}
+      </button>
       <div class="tiles">
         {#each CATS as c}
           {@const n = shown.filter((s) => s.issue.cat === c).length}
@@ -590,11 +737,12 @@
               <Icon name="check" size={16} />
               {#if allChecked}{t("No suggestions — your writing looks great.")}
               {:else if !units.length}{t("Start writing, and suggestions show up here.")}
-              {:else}{t("Press Check now, or turn on Check as you type in Settings › AI assistant.")}{/if}
+              {:else if !enabled}{t("Scanning is stopped. Press Check page or Whole document to start again.")}
+              {:else}{t("Press Check page, or turn on Check as you type.")}{/if}
             </div>
           {/if}
           {#each listed.slice(0, 300) as s (s.id)}
-            <div class="sug" class:open={expanded === s.id} style:--c={CAT_COLOR[s.issue.cat]} in:fade={{ duration: 140 }}>
+            <div class="sug" class:open={expanded === s.id} style:--c={CAT_COLOR[s.issue.cat]} in:fade={{ duration: 140 }} animate:flip={{ duration: 180 }}>
               {#if expanded === s.id}
                 {@render issueBody(s, false)}
               {:else}
@@ -686,6 +834,20 @@
   .mark.on {
     background: color-mix(in srgb, var(--c) 16%, transparent);
   }
+  /* Picked in the panel. */
+  .mark.focus {
+    background: color-mix(in srgb, var(--c) 28%, transparent);
+    border-bottom-width: 3px;
+    animation: wa-pulse 1.1s ease-out 1;
+  }
+  @keyframes wa-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 55%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 8px transparent;
+    }
+  }
   .wa-card {
     position: fixed;
     z-index: 1100;
@@ -766,51 +928,73 @@
     width: 100%;
     justify-content: center;
   }
-  .fab {
-    position: absolute;
-    right: 22px;
-    bottom: 22px;
-    z-index: 35;
-    width: 42px;
-    height: 42px;
+  .hicon {
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    border: 2.5px solid var(--ring);
-    background: var(--brand-grad);
-    color: #fff;
-    font-weight: 700;
     display: grid;
     place-items: center;
-    box-shadow: 0 4px 14px rgba(10, 30, 110, 0.35);
-    transition: transform 160ms var(--ease), box-shadow 160ms;
-  }
-  .fab:hover {
-    transform: scale(1.06);
-  }
-  .fab.busy {
-    border-color: transparent;
-    background:
-      var(--brand-grad) padding-box,
-      conic-gradient(#e8b931 0 25%, transparent 0 100%) border-box;
-    animation: spin 0.9s linear infinite;
-  }
-  .fab.busy > span {
-    animation: spin 0.9s linear infinite reverse;
-  }
-  .spark {
+    background: #0d1838;
     color: #e8b931;
+    box-shadow: 0 0 0 2px #e8b931;
   }
+  .scanrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+  }
+  .pillbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: background var(--dur), border-color var(--dur), color var(--dur);
+  }
+  .pillbtn i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-3);
+    transition: background var(--dur);
+  }
+  .pillbtn.on {
+    border-color: color-mix(in srgb, #e8b931 70%, transparent);
+    color: var(--text);
+    background: color-mix(in srgb, #e8b931 12%, transparent);
+  }
+  .pillbtn.on i {
+    background: #22a861;
+  }
+  .pillbtn.auto {
+    align-self: flex-start;
+  }
+  /* In the mail view's side slot, like the AI assistant: the email narrows to make room. */
   .wa-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 36;
-    width: min(360px, 92%);
+    width: 360px;
+    flex: none;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--surface);
     border-left: 1px solid var(--border);
-    box-shadow: -10px 0 30px rgba(10, 20, 60, 0.12);
+    will-change: transform;
   }
   .wa-panel header {
     display: flex;

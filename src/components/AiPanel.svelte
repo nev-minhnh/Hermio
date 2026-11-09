@@ -169,14 +169,14 @@
     if (scroller && (force || stickBottom)) scroller.scrollTop = scroller.scrollHeight;
   }
 
-  /** The panel slides in from the right and the mail area beside it narrows with it (instead of
-   *  snapping to the new width). */
-  function panelSlide(node: HTMLElement) {
-    const w = node.offsetWidth || 380;
+  /** The panel slides in from the right. Only transform and opacity change per frame (done by
+   *  the GPU): animating its margin made the whole mail area re-layout on every frame, which
+   *  stuttered with a long list or a big email open. */
+  function panelSlide(_node: HTMLElement) {
     return {
-      duration: 260,
+      duration: 220,
       easing: cubicOut,
-      css: (k: number) => `margin-right:${-(1 - k) * w}px;opacity:${Math.min(1, k * 1.3)}`,
+      css: (k: number) => `transform:translateX(${(1 - k) * 28}px);opacity:${Math.min(1, k * 1.25)}`,
     };
   }
 
