@@ -1,5 +1,6 @@
 <script lang="ts">
   import { slide, fade } from "svelte/transition";
+  import { reduced } from "../lib/motion";
   import { t, locale } from "../lib/i18n.svelte";
   import { untrack } from "svelte";
   import Icon from "../lib/Icon.svelte";
@@ -26,7 +27,26 @@
   // Keyed on the id only: background refreshes replace row data in place and must not
   // reload (or flash) the open message.
   const curId = $derived(store.selected.length === 1 ? store.selected[0] : null);
-  const msg = $derived(curId === null ? null : (store.messages.find((m) => m.id === curId) ?? null));
+  /**
+   * The email on screen. It lags behind the selection on purpose: the previous email stays (dimmed)
+   * until the next one's body is loaded, then the two cross-fade, instead of the pane blanking,
+   * showing a skeleton and popping the new email in.
+   */
+  let shownId = $state<number | null>(null);
+  let leaving = $state(false);
+  /** Copy of the email on screen, for the moment it leaves the list (deleted, archived…). */
+  let snap = null as Message | null;
+  const msg = $derived(shownId === null ? null : (store.messages.find((m) => m.id === shownId) ?? (snap?.id === shownId ? snap : null)));
+  let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the current email started fading out (so it gets its full fade before the swap). */
+  let leftAt = 0;
+  const FADE_OUT = 110;
+  /** Fade (and rise slightly) into view. */
+  function enter(_node: Element) {
+    return reduced()
+      ? { duration: 0 }
+      : { duration: 220, easing: (t: number) => 1 - Math.pow(1 - t, 3), css: (t: number) => `opacity:${t};transform:translateY(${(1 - t) * 6}px)` };
+  }
   const multi = $derived(store.selected.length > 1);
   const invite = $derived(body?.ics ? parseIcs(body.ics) : null);
   const dark = $derived(document.documentElement.dataset.theme === "dark");
@@ -34,21 +54,52 @@
   const terms = $derived(searchTerms(store.search));
   const files = $derived(body ? body.attachments.filter((a) => !a.inline) : []);
 
+  /** Put email `id` on screen (with its body, or none yet → skeleton). */
+  function show(id: number, b: MessageBody | null, err = "") {
+    clearTimeout(skeletonTimer);
+    if (shownId !== id) {
+      showDetails = false;
+      preview = null;
+    }
+    body = b;
+    error = err;
+    snap = store.messages.find((m) => m.id === id) ?? null;
+    // Set together with the body, so the email still on screen doesn't re-render meanwhile.
+    if (shownId !== id && snap)
+      allowImages = store.settings.remote_images === "always" || store.settings.trusted_senders.includes(snap.from_addr.toLowerCase());
+    shownId = id;
+    leaving = false;
+  }
+
   $effect(() => {
     const id = curId;
     clearTimeout(seenTimer);
-    untrack(() => {
-      body = null;
-      error = "";
-      showDetails = false;
-      preview = null;
-    });
-    if (id === null) return;
+    clearTimeout(skeletonTimer);
+    if (id === null) {
+      untrack(() => {
+        shownId = null;
+        body = null;
+        error = "";
+        leaving = false;
+      });
+      return;
+    }
     const m = untrack(() => store.messages.find((x) => x.id === id));
     if (!m) return;
     untrack(() => {
-      allowImages = store.settings.remote_images === "always" || store.settings.trusted_senders.includes(m.from_addr.toLowerCase());
-      load(m);
+      if (shownId !== id) {
+        if (shownId === null) {
+          // Nothing on screen yet: show the header at once, the body fades in when ready.
+          show(id, null);
+        } else {
+          // Quick successive picks (arrow keys) keep the first fade-out's clock.
+          if (!leaving) leftAt = performance.now();
+          leaving = true;
+          // A slow body: don't keep the old email up for long, show the new one's skeleton.
+          skeletonTimer = setTimeout(() => curId === id && shownId !== id && show(id, null), 280);
+        }
+        load(m);
+      }
       const delay = store.settings.mark_read_delay;
       if (!m.seen && delay >= 0) {
         seenTimer = setTimeout(() => {
@@ -63,9 +114,12 @@
   async function load(m: Message) {
     try {
       const b = await api.message(m.id);
-      if (curId === m.id) body = b;
+      // Let the previous email finish fading out first.
+      const wait = leaving ? FADE_OUT - (performance.now() - leftAt) : 0;
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      if (curId === m.id) show(m.id, b);
     } catch (e) {
-      if (curId === m.id) error = String(e);
+      if (curId === m.id) show(m.id, null, String(e));
     }
   }
 
@@ -312,8 +366,9 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
       <span class="muted small">{t("Nothing selected")}</span>
     </div>
   {:else}
+    <div class="stack" class:leaving>
     {#key msg.id}
-      <div class="content">
+      <div class="content" in:enter>
         <div class="head">
           <div class="titlerow">
             {#if onback}
@@ -440,6 +495,7 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
         </div>
       </div>
     {/key}
+    </div>
   {/if}
 </div>
 
@@ -490,12 +546,21 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
     box-shadow: 6px 6px 0 var(--selected-strong);
     animation: scale-in 220ms var(--ease);
   }
+  .stack {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 110ms ease-out;
+  }
+  .stack.leaving {
+    opacity: 0;
+  }
   .content {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    animation: slide-left 220ms var(--ease);
     container-type: inline-size;
   }
   .date-sm {
@@ -760,20 +825,17 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
     transform: rotate(180deg);
   }
   iframe {
-    opacity: 0;
-    transition: opacity 200ms var(--ease);
-  }
-  iframe.ready {
-    opacity: 1;
-  }
-  iframe {
     flex: 1;
     display: block;
     width: 100%;
     height: 100%;
     border: none;
     background: transparent;
-    animation: fade 180ms var(--ease);
+    opacity: 0;
+    transition: opacity 200ms var(--ease);
+  }
+  iframe.ready {
+    opacity: 1;
   }
   .loading {
     flex: 1;
@@ -785,7 +847,7 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
   .bar {
     height: 10px;
     border-radius: 5px;
-    background: linear-gradient(90deg, #eee 0%, #f6f6f6 40%, #eee 80%);
+    background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-2) 40%, var(--surface-3) 80%);
     background-size: 200% 100%;
     animation: shimmer 1.2s linear infinite;
   }

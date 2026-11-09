@@ -127,6 +127,8 @@ class Store {
   filter = $state("");
   search = $state("");
   messages = $state<Message[]>([]);
+  /** Bumped to make the list scroll the selected email into view. */
+  reveal = $state(0);
   hasMore = $state(true);
   loading = $state(false);
   selected = $state<number[]>([]);
@@ -485,6 +487,33 @@ class Store {
     try {
       this.suggestions = await api.aiSuggestions();
     } catch {}
+  }
+
+  /**
+   * A new-mail toast was clicked: show the email. It is opened in the inbox it arrived in (the
+   * unified inbox when the account is in the current space) so the user lands in a normal list;
+   * mail that went straight into a hidden group is shown on its own.
+   */
+  async openNotified(messageId: number, accountId: number) {
+    if (!messageId) return;
+    this.route = "mail";
+    this.search = "";
+    this.compose = null;
+    const inSpace = this.visibleAccounts?.some((a) => a.id === accountId) ?? true;
+    const inbox = this.folders.find((f) => f.account_id === accountId && f.role === "inbox");
+    const view = inSpace ? "unified:inbox" : inbox ? `folder:${inbox.id}` : `account:${accountId}`;
+    this.cite = new Map();
+    this.view = view;
+    this.checkMode = false;
+    await this.loadMessages(true);
+    if (!this.messages.some((m) => m.id === messageId)) {
+      this.idsTitle = t("New mail");
+      this.view = `ids:${messageId}`;
+      await this.loadMessages(true);
+    }
+    this.selected = [messageId];
+    this.anchor = messageId;
+    this.reveal++;
   }
 
   /** From the suggestion popup: show the inbox with the suggestions list expanded. */

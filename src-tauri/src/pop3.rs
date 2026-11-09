@@ -219,7 +219,7 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
             } else {
                 let from = if m.from_name.is_empty() { m.from_addr.clone() } else { m.from_name.clone() };
                 state.emit("new-mail", serde_json::json!({ "account": a.email, "from": from, "subject": m.subject }));
-                to_notify.push(crate::notify::NewMail { from, subject: m.subject.clone() });
+                to_notify.push(crate::notify::NewMail { id, from, subject: m.subject.clone() });
             }
         }
         new_count += 1;
@@ -240,7 +240,7 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
             format!("Inbox: notifying about {} new message(s); no notification for {quiet_groups} sorted into hidden groups, {quiet_rules} marked read by rules", to_notify.len()),
         );
     }
-    crate::notify::new_mail(state, &a.email, &to_notify);
+    crate::notify::new_mail(state, a.id, &a.email, &to_notify);
     // Same matching as "Run all on existing mail" for everything that arrived.
     if let Err(e) = crate::rules::apply_new(&state.db, &new_ids) {
         eprintln!("rules: {e:#}");

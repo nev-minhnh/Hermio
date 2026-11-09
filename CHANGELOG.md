@@ -3,6 +3,18 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.5.2
+
+- **Clicking a new-mail notification opens that email.** Hermio comes back from the tray (or
+  from being minimised), switches to the inbox the mail arrived in, selects the email and scrolls
+  to it. Mail that went straight into a hidden group opens on its own. The summary notification
+  for a burst opens the newest of them. Windows only reports the click while the toast is on
+  screen, not later from the notification centre.
+- **Smooth reading pane.** Picking another email fades the current one out and the new one in
+  (with a slight rise), instead of blanking the pane, flashing a loading skeleton and popping the
+  new email in. The skeleton only appears when a body takes longer than ~0.3 s, and it now uses
+  the theme's colours (it was light grey in dark mode). Fast arrow-key browsing stays responsive.
+
 ## 0.5.1
 
 New-mail notifications that went missing:

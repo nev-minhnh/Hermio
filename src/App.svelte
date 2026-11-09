@@ -71,6 +71,14 @@
       );
       unsubs.push(await listen<{ active: boolean; count?: number }>("npu-bg", (p) => (store.npuBg = p?.active ? { active: true, count: p.count ?? 0 } : null)));
       unsubs.push(await listen<{ count: number }>("ai-suggest-queue", (p) => (store.suggestQueue = p?.count ?? 0)));
+      // Click on a new-mail toast: open that email (also a click made while this page was loading).
+      unsubs.push(
+        await listen<{ message_id: number; account_id: number }>("open-message", async () => {
+          const p = await api.notificationPending().catch(() => null);
+          if (p) store.openNotified(p.message_id, p.account_id);
+        }),
+      );
+      api.notificationPending().then((p) => p && store.openNotified(p.message_id, p.account_id)).catch(() => {});
       api.restoredNote().then((p) => p && store.success(t("Data restored. Your previous data was kept in {path}", { path: p }))).catch(() => {});
       api.aiSuggestQueue().then((n) => (store.suggestQueue = n)).catch(() => {});
       unsubs.push(await listen<NpuProgress>("npu-progress", (p) => store.onNpuProgress(p)));

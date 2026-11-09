@@ -1263,6 +1263,11 @@ pub fn sync_log() -> Vec<crate::sync::LogLine> {
 pub fn sync_log_clear() {
     crate::sync::log_clear()
 }
+/// A toast click that happened before the page was listening.
+#[tauri::command]
+pub fn notification_pending() -> Option<crate::notify::OpenRequest> {
+    crate::notify::take_pending()
+}
 #[tauri::command]
 pub fn test_notification(state: S) -> R<()> {
     use tauri_plugin_notification::NotificationExt;

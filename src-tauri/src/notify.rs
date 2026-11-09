@@ -11,6 +11,7 @@ use tauri_plugin_notification::NotificationExt;
 /// One new message worth telling the user about.
 #[derive(Debug, Clone)]
 pub struct NewMail {
+    pub id: i64,
     pub from: String,
     pub subject: String,
 }
@@ -37,12 +38,22 @@ fn setting_bool(state: &AppState, key: &str, default: bool) -> bool {
 
 /// Show the toasts for what one sync run of one mailbox brought in: one toast per message for
 /// a few messages, a single summary for a burst (Windows queues and drops floods of toasts).
-pub fn new_mail(state: &AppState, account: &str, items: &[NewMail]) {
+pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMail]) {
     if items.is_empty() || !setting_bool(state, "notifications", true) {
         return;
     }
-    let show = |title: &str, body: &str| {
-        if let Err(e) = state.app.notification().builder().title(title).body(body).show() {
+    // The message id travels with the toast, so a click can open that email.
+    let show_for = |message: i64, title: &str, body: &str| {
+        let b = state
+            .app
+            .notification()
+            .builder()
+            .id(i32::try_from(message).unwrap_or(0))
+            .title(title)
+            .body(body)
+            .extra("message_id", message)
+            .extra("account_id", account_id);
+        if let Err(e) = b.show() {
             crate::sync::log_plain(state, "warn", format!("Couldn't show a notification: {e}"));
         }
     };
@@ -50,7 +61,7 @@ pub fn new_mail(state: &AppState, account: &str, items: &[NewMail]) {
     if items.len() <= 3 {
         for m in items {
             let from = if m.from.trim().is_empty() { account } else { m.from.as_str() };
-            show(from, &subject(m));
+            show_for(m.id, from, &subject(m));
         }
     } else {
         let mut senders: Vec<&str> = vec![];
@@ -60,8 +71,48 @@ pub fn new_mail(state: &AppState, account: &str, items: &[NewMail]) {
             }
         }
         let names = if senders.len() > 3 { format!("{} and {} more", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
-        show(&format!("{} new messages · {account}", items.len()), &format!("From {names}"));
+        // A click on the summary opens the newest of them, in its inbox.
+        let newest = items.iter().map(|m| m.id).max().unwrap_or(0);
+        show_for(newest, &format!("{} new messages · {account}", items.len()), &format!("From {names}"));
     }
+}
+
+/// What a click on a toast should open.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OpenRequest {
+    pub message_id: i64,
+    pub account_id: i64,
+}
+
+static PENDING: std::sync::Mutex<Option<OpenRequest>> = std::sync::Mutex::new(None);
+
+/// Called when a toast is clicked: bring the window back and ask the page to open the email.
+/// The request is also kept until the page picks it up, in case the page is still loading.
+pub fn clicked(app: &tauri::AppHandle, p: &tauri_plugin_notification::ActionPerformed) {
+    use tauri::{Emitter, Manager};
+    if p.action_id() != "tap" {
+        return;
+    }
+    let num = |k: &str| p.notification().and_then(|n| n.extra().get(k)).and_then(|v| v.as_i64());
+    let req = OpenRequest {
+        message_id: num("message_id").or_else(|| p.notification().map(|n| n.id() as i64)).unwrap_or(0),
+        account_id: num("account_id").unwrap_or(0),
+    };
+    *PENDING.lock().unwrap() = Some(req.clone());
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = app2.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        let _ = app2.emit("open-message", &req);
+    });
+}
+
+/// The click the page hasn't handled yet (taken once).
+pub fn take_pending() -> Option<OpenRequest> {
+    PENDING.lock().unwrap().take()
 }
 
 /// Windows only shows toasts from an app whose AppUserModelID is registered. The installer's

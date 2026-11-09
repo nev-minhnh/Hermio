@@ -123,6 +123,12 @@ fn main() {
                 sync_locks: Default::default(),
             });
             app.manage(state.clone());
+            // A click on a new-mail toast opens Hermio on that email.
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let h = app.handle().clone();
+                let _ = app.notification().on_action(move |p| notify::clicked(&h, p));
+            }
             if let Some(old) = migrated {
                 sync::log_plain(&state, "info", format!("Moved your data from Nelo ({}) to Hermio", old.display()));
             }
@@ -240,6 +246,7 @@ fn main() {
             commands::sync_log_clear,
             commands::sync_log_open,
             commands::test_notification,
+            commands::notification_pending,
             commands::schedule_send,
             commands::list_outbox,
             commands::cancel_outbox,

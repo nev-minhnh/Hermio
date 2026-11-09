@@ -299,7 +299,7 @@ pub async fn sync_folder(state: &AppState, s: &mut ImapSession, a: &Account, fol
                         new_unread += 1;
                         let from = if m.from_name.is_empty() { m.from_addr.clone() } else { m.from_name.clone() };
                         state.emit("new-mail", serde_json::json!({ "account": a.email, "from": from, "subject": m.subject }));
-                        to_notify.push(crate::notify::NewMail { from, subject: m.subject.clone() });
+                        to_notify.push(crate::notify::NewMail { id, from, subject: m.subject.clone() });
                     }
                 }
             }
@@ -320,7 +320,7 @@ pub async fn sync_folder(state: &AppState, s: &mut ImapSession, a: &Account, fol
                 format!("{}: notifying about {} new message(s){}", folder.name, to_notify.len(), if why.is_empty() { String::new() } else { format!(" (no notification for {})", why.join(", ")) }),
             );
         }
-        crate::notify::new_mail(state, &a.email, &to_notify);
+        crate::notify::new_mail(state, a.id, &a.email, &to_notify);
         if inbox || n_new > 0 {
             crate::sync::log(
                 state,

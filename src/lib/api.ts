@@ -324,6 +324,7 @@ export const api = {
   syncLogClear: () => invoke<void>("sync_log_clear"),
   syncLogOpen: () => invoke<void>("sync_log_open"),
   testNotification: () => invoke<void>("test_notification"),
+  notificationPending: () => invoke<{ message_id: number; account_id: number } | null>("notification_pending"),
   npuRedownload: (tag: string) => invoke<void>("npu_redownload", { tag }),
   folders: () => invoke<Folder[]>("list_folders"),
   messages: (query: ListQuery) => invoke<Message[]>("list_messages", { query }),

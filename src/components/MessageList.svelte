@@ -151,6 +151,14 @@
     }
   });
 
+  // Asked from outside (a toast click…): scroll the selected email into view.
+  $effect(() => {
+    if (store.reveal && store.selected.length === 1) {
+      const id = store.selected[0];
+      setTimeout(() => ensureVisible(id), 60);
+    }
+  });
+
   function select(e: MouseEvent, m: Message, index: number) {
     store.compose = null;
     if (store.checkMode && !e.shiftKey) {
