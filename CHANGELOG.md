@@ -3,6 +3,12 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.6.1
+
+- Notifications no longer start with "Hermio / New notification". Windows inserts those lines
+  when a toast has no title of its own; the subject is now the title, with From / To below and
+  the time on the right. Calendar reminders likewise show the event title as their title.
+
 ## 0.6.0
 
 **Notifications**

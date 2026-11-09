@@ -87,7 +87,10 @@ fn when(ts: i64) -> String {
 /// The toast XML for new mail (layout above). `launch` is what a click on it reports.
 fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str) -> String {
     format!(
-        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><group><subgroup hint-weight="78"><text hint-style="base" hint-maxLines="2">{subject}</text></subgroup><subgroup hint-weight="22" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group><group><subgroup><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
+        // Windows needs a top-level <text> as the toast's title (without one it shows its own
+        // "<app> / New notification" lines), and nothing can sit beside the title, so the time
+        // goes to the right of the lines below it.
+        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><text hint-maxLines="2">{subject}</text><group><subgroup hint-weight="74"><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup><subgroup hint-weight="26" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
         launch = esc(launch),
         subject = esc(subject),
         time = esc(time),
@@ -164,7 +167,7 @@ pub fn reminder(state: &AppState, e: &Event, left: i64, key: &str, last: bool) {
     let (skip, open, dismiss) = if vi { ("Bỏ qua các lần nhắc sau", "Mở", "Đóng") } else { ("Skip remaining reminders", "Open", "Dismiss") };
     let skip_btn = if last { String::new() } else { format!(r#"<action content="{}" arguments="ev:skip:{}"/>"#, esc(skip), esc(key)) };
     let xml = format!(
-        r#"<toast scenario="reminder" launch="ev:open:{id}" activationType="foreground"><visual><binding template="ToastGeneric"><group><subgroup hint-weight="72"><text hint-style="base" hint-maxLines="2">{title}</text></subgroup><subgroup hint-weight="28" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{soon}</text></subgroup></group><group><subgroup><text hint-style="body" hint-maxLines="1">{span}</text><text hint-style="captionSubtle" hint-maxLines="1">{place}</text></subgroup></group></binding></visual><actions>{skip_btn}<action content="{open}" arguments="ev:open:{id}"/><action content="{dismiss}" arguments="dismiss" activationType="system"/></actions><audio src="ms-winsoundevent:Notification.Reminder"/></toast>"#,
+        r#"<toast scenario="reminder" launch="ev:open:{id}" activationType="foreground"><visual><binding template="ToastGeneric"><text hint-maxLines="2">{title}</text><group><subgroup hint-weight="72"><text hint-style="body" hint-maxLines="1">{span}</text><text hint-style="captionSubtle" hint-maxLines="1">{place}</text></subgroup><subgroup hint-weight="28" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{soon}</text></subgroup></group></binding></visual><actions>{skip_btn}<action content="{open}" arguments="ev:open:{id}"/><action content="{dismiss}" arguments="dismiss" activationType="system"/></actions><audio src="ms-winsoundevent:Notification.Reminder"/></toast>"#,
         id = e.id,
         title = esc(&title),
         soon = esc(&soon),
@@ -301,6 +304,8 @@ mod tests {
         let x = mail_xml("Subject: A & B", "10:04 AM", "From: a@x.com", "To: me@x.com", "msg:1:2");
         assert!(x.contains("Subject: A &amp; B"));
         assert!(x.contains(r#"hint-align="right">10:04 AM<"#));
+        // The subject is the toast's title: a top-level <text> before any group.
+        assert!(x.find(r#"<text hint-maxLines="2">Subject: A &amp; B</text>"#).unwrap() < x.find("<group>").unwrap());
         assert!(x.contains(r#"launch="msg:1:2""#));
         assert!(x.find("From:").unwrap() < x.find("To:").unwrap());
         assert_eq!(clip("abcdef", 4), "abc…");
