@@ -8,6 +8,7 @@
   import { store } from "../lib/store.svelte";
   import Dialog from "./Dialog.svelte";
   import NpuSettings from "./NpuSettings.svelte";
+  import ModelPicker from "./ModelPicker.svelte";
   import type { Skill } from "../lib/api";
 
   const kinds: { kind: string; label: string; hint: string; needsKey: boolean; base: string }[] = [
@@ -286,6 +287,26 @@
 </section>
 
 <section>
+  <h3>{t("Writing assistant")}</h3>
+  <p class="muted small">{t("Checks the emails you write (correctness, clarity, engagement, delivery), rewrites on request, translates and looks up meanings. Open it from Hermio AI in the composer, Ctrl+Alt+G / K / T / D, or by double-clicking a word.")}</p>
+  <div class="row wa-model"><span class="small">{t("Model")}</span><ModelPicker /></div>
+  <div class="accs">
+    <button class="acc tall" onclick={() => store.set("writing_auto", !store.settings.writing_auto)}>
+      <span class="switch" class:on={store.settings.writing_auto}></span>
+      <span class="grow">{t("Check as you type")}<br /><span class="muted small">{t("Checks the paragraphs you changed after a pause in typing. Off: press Check now. Every check is a request to the provider.")}</span></span>
+    </button>
+    <button class="acc tall" onclick={() => store.set("define_on_dblclick", !store.settings.define_on_dblclick)}>
+      <span class="switch" class:on={store.settings.define_on_dblclick}></span>
+      <span class="grow">{t("Double-click a word to see its meaning")}<br /><span class="muted small">{t("In emails and in the composer. English words come from the Free Dictionary; others from the model.")}</span></span>
+    </button>
+  </div>
+  <label class="field">
+    <span class="small">{t("Standing instructions for the writing assistant")}</span>
+    <textarea class="input" rows="2" value={store.settings.writing_instructions} onchange={(e) => store.set("writing_instructions", (e.target as HTMLTextAreaElement).value)} placeholder={t("e.g. I write to professors and supervisors; keep a polite, academic tone.")}></textarea>
+  </label>
+</section>
+
+<section>
   <div class="sec-row">
     <h3>{t("Skills")}</h3>
     <div class="row">
@@ -421,6 +442,24 @@
 {/if}
 
 <style>
+  .wa-model {
+    gap: 10px;
+    margin: 6px 0 8px;
+  }
+  .wa-model :global(.mp) {
+    flex: 1;
+    max-width: 520px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .field textarea {
+    resize: vertical;
+    font: inherit;
+  }
   h2 {
     margin: 0 0 6px;
     font-family: var(--font-display);

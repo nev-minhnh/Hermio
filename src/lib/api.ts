@@ -333,6 +333,10 @@ export const api = {
   testNotification: () => invoke<void>("test_notification"),
   inviteInfo: (messageId: number) => invoke<InviteInfo | null>("invite_info", { messageId }),
   inviteRespond: (messageId: number, action: "add" | "accepted" | "tentative" | "declined" | "dismiss") => invoke<InviteResult>("invite_respond", { messageId, action }),
+  aiComplete: (providerId: string, model: string | null, thinking: boolean, system: string, prompt: string, streamId: string) =>
+    invoke<string>("ai_complete", { providerId, model, thinking, system, prompt, streamId }),
+  translateText: (text: string, to: string) => invoke<{ text: string; from: string }>("translate_text", { text, to }),
+  defineWord: (word: string) => invoke<string>("define_word", { word }),
   setUnreadBadge: (count: number, overlay: number[] | null, tray: number[] | null) => invoke<void>("set_unread_badge", { count, overlay, tray }),
   reminderSkip: (key: string) => invoke<void>("reminder_skip", { key }),
   notificationPending: () => invoke<{ message_id: number; account_id: number } | null>("notification_pending"),

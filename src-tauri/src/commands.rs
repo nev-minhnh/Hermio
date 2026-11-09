@@ -1273,6 +1273,20 @@ pub fn test_notification(state: S) -> R<()> {
     crate::notify::test(&state);
     Ok(())
 }
+/// Writing assistant: one completion (`streamId` → Stop via `ai_cancel`).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn ai_complete(state: S<'_>, provider_id: String, model: Option<String>, thinking: bool, system: String, prompt: String, stream_id: Option<String>) -> R<String> {
+    crate::writing::complete(&state, &provider_id, model.as_deref(), thinking, &system, &prompt, stream_id).await.map_err(ea)
+}
+#[tauri::command]
+pub async fn translate_text(text: String, to: String) -> R<crate::writing::Translation> {
+    crate::writing::translate_auto(&text, &to).await.map_err(ea)
+}
+#[tauri::command]
+pub async fn define_word(word: String) -> R<String> {
+    crate::writing::define_english(&word).await.map_err(ea)
+}
 /// Unread count on the taskbar button (Windows overlay icon) and the tray icon, both drawn by
 /// the page; `None` removes the badge. The tray tooltip says the number too.
 #[tauri::command]

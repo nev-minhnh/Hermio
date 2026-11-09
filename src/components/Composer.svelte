@@ -10,6 +10,16 @@
   import { pickFiles } from "../lib/tauri";
   import RichEditor from "./RichEditor.svelte";
   import RecipientInput from "./RecipientInput.svelte";
+  import WritingAssistant from "./WritingAssistant.svelte";
+
+  let wa = $state<ReturnType<typeof WritingAssistant>>();
+  let aiMenu = $state(false);
+  function aiPick(e: MouseEvent, what: "check" | "ask" | "translate" | "define") {
+    aiMenu = false;
+    if (what === "check") return wa?.checkWriting();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    wa?.assist(what, r.left, r.bottom);
+  }
 
   const init = store.compose!;
   const src = init.source;
@@ -292,6 +302,20 @@
       {/if}
     </div>
     <button class="btn subtle" onclick={attach}><Icon name="attach" size={16} />{t("Attach")}</button>
+    <div class="ai-wrap">
+      <button class="btn subtle ai-btn" onclick={() => (aiMenu = !aiMenu)} title={t("Writing assistant, Ask AI, Translate, Meaning")}><span class="spark">✦</span>Hermio AI<Icon name="chevronDown" size={13} /></button>
+      {#if aiMenu}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div class="sched-backdrop" onclick={() => (aiMenu = false)}></div>
+        <div class="sched pop ai-menu" transition:scale={{ start: 0.96, duration: 150, opacity: 0 }}>
+          <button class="sched-item" onclick={(e) => aiPick(e, "check")}><span>{t("Check writing with AI")}</span><kbd>Ctrl+Alt+G</kbd></button>
+          <button class="sched-item" onclick={(e) => aiPick(e, "ask")}><span>{t("Ask AI…")}</span><kbd>Ctrl+Alt+K</kbd></button>
+          <button class="sched-item" onclick={(e) => aiPick(e, "translate")}><span>{t("Translate")}</span><kbd>Ctrl+Alt+T</kbd></button>
+          <button class="sched-item" onclick={(e) => aiPick(e, "define")}><span>{t("Look up meaning")}</span><kbd>Ctrl+Alt+D</kbd></button>
+        </div>
+      {/if}
+    </div>
     <label class="sig">
       <Icon name="signature" size={16} />
       <select class="input" value={sigId ?? ""} onchange={(e) => changeSignature((e.target as HTMLSelectElement).value ? Number((e.target as HTMLSelectElement).value) : null)}>
@@ -341,6 +365,7 @@
     {:else}
       <div class="muted" style="padding:16px 4px" out:fade={{ duration: 100 }}>{t("Preparing…")}</div>
     {/if}
+    {#if editorEl}<WritingAssistant el={editorEl} bind:this={wa} />{/if}
     {#if account?.protocol === "pop3"}
       <div class="muted small foot">{t("A copy of sent mail is saved in this account's POP3 data folder.")}</div>
     {/if}
@@ -349,6 +374,7 @@
 
 <style>
   .composer {
+    position: relative;
     flex: 1;
     min-width: 0;
     display: flex;
@@ -370,6 +396,19 @@
     border-left: 1px solid color-mix(in srgb, #fff 35%, transparent);
     padding: 0 8px;
     min-width: 0;
+  }
+  .ai-wrap {
+    position: relative;
+  }
+  .ai-btn .spark {
+    color: #e8b931;
+  }
+  .ai-menu {
+    width: 260px;
+  }
+  .ai-menu kbd {
+    font: 0.72rem var(--mono, ui-monospace, Consolas, monospace);
+    color: var(--text-3);
   }
   .sched-backdrop {
     position: fixed;

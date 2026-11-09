@@ -60,6 +60,12 @@
   replies and writes signatures.
 - Background group suggestions for new mail. They give way to you whenever you use the AI.
 
+**Writing assistant** (Grammarly-style, in the composer)
+- Checks what you write for correctness, clarity, engagement and delivery against your goals;
+  underlines issues with one-click fixes, a score, tone, a personal dictionary and a progress report.
+- Rewrite with AI (formal, friendly, concise, expand, simplify, ideas…), Ask AI, Translate
+  (Google Translate or any model) and word meanings — also by double-clicking a word in an email.
+
 **Calendar**
 - Google Calendar day, week and month views: create, edit and delete events.
 - Meeting invitations from email can be added to the calendar.

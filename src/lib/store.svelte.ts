@@ -1,9 +1,28 @@
 import { t } from "./i18n.svelte";
 import { setInvokeHooks } from "./tauri";
 import { updateBadge, type BadgeMode } from "./badge";
+import { DEFAULT_GOALS, type Goals, type Stats } from "./writing-types";
 import type { NpuStatus, NpuInfo, NpuProgress, NpuAvailable, NpuDirs } from "./api";
 import { api, type Account, type Folder, type Message, type Signature, type Space, type Group, type Outgoing, type OutboxItem, type Suggestion, type Reminder } from "./api";
 import { i18n, syncLang, type Lang } from "./i18n.svelte";
+
+/** What the Hermio AI popup works on. */
+export interface AssistTarget {
+  text: string;
+  /** The surrounding paragraph (for meanings in context). */
+  context: string;
+  /** The text is a selection (not the paragraph at the cursor). */
+  selection: boolean;
+  replace?: (text: string) => void;
+  insert?: (text: string) => void;
+}
+export interface AssistOpen {
+  mode: "ask" | "translate" | "define";
+  x: number;
+  y: number;
+  target: AssistTarget;
+  key: number;
+}
 
 export interface Settings {
   theme: "system" | "light" | "dark";
@@ -25,6 +44,25 @@ export interface Settings {
   rail_collapsed: boolean;
   /** New-mail notification layout (two ways Windows can draw it; see "Send a test notification"). */
   toast_layout: 1 | 2;
+  // ---- writing assistant (composer) and Ask AI / Translate / Meaning popup ----
+  /** Check as you type (every check is a request to the provider). */
+  writing_auto: boolean;
+  writing_delay_ms: number;
+  writing_goals: Goals;
+  /** Words never flagged. */
+  writing_dictionary: string[];
+  writing_stats: Stats;
+  /** Standing instructions added to every writing request. */
+  writing_instructions: string;
+  /** Provider / model for the writing assistant ("" = the assistant's default). */
+  assist_provider: string;
+  assist_model: string;
+  assist_thinking: boolean;
+  /** "google" or a provider id. */
+  translate_engine: string;
+  translate_to: string;
+  /** Double-click a word (email or composer) to see its meaning. */
+  define_on_dblclick: boolean;
   /** Calendar reminders (12 h … 10 min before). */
   reminders: boolean;
   confirm_delete: boolean;
@@ -65,6 +103,18 @@ export const defaults: Settings = {
   notifications: true,
   notify_groups: false,
   reminders: true,
+  writing_auto: false,
+  writing_delay_ms: 1500,
+  writing_goals: { ...DEFAULT_GOALS },
+  writing_dictionary: [],
+  writing_stats: { accepted: [0, 0, 0, 0], dismissed: 0, weeks: {} },
+  writing_instructions: "",
+  assist_provider: "",
+  assist_model: "",
+  assist_thinking: false,
+  translate_engine: "google",
+  translate_to: "auto",
+  define_on_dblclick: true,
   toast_layout: 1,
   rail_collapsed: false,
   taskbar_badge: "count",
@@ -141,6 +191,12 @@ class Store {
   filter = $state("");
   search = $state("");
   messages = $state<Message[]>([]);
+  /** The Hermio AI popup (Ask AI / Translate / Meaning), when open. */
+  assist = $state<AssistOpen | null>(null);
+  private assistSeq = 0;
+  openAssist(mode: AssistOpen["mode"], x: number, y: number, target: AssistTarget) {
+    this.assist = { mode, x, y, target, key: ++this.assistSeq };
+  }
   /** Calendar: jump to this day and open this event (from a reminder, an invitation…). */
   calFocus = $state<{ id: number; ts: number; seq: number } | null>(null);
   private focusSeq = 0;

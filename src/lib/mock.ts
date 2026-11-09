@@ -306,6 +306,25 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
     case "invite_respond": mockInvites[a.messageId] = a.action === "add" ? "added" : a.action; await new Promise((r) => setTimeout(r, 700)); return { event_id: 1, added: a.action !== "declined" && a.action !== "dismiss", already: false, replied: a.action !== "add" && a.action !== "dismiss", title: "Event", start_ts: Math.floor(Date.now() / 1000) + 86400, all_day: false, calendar: "Calendar" };
     case "reminder_skip": return null;
     case "set_unread_badge": return null;
+    case "ai_complete": {
+      await new Promise((r) => setTimeout(r, 900));
+      if (String(a.system).includes("numbered unit")) {
+        const units = String(a.prompt).split(/\n\n/).filter(Boolean).map((u) => u.replace(/^\[\d+\] /, ""));
+        const issues: any[] = [];
+        units.forEach((u, i) => {
+          const m = u.match(/\b(recieve|teh|alot|definately|untill)\b/i);
+          if (m) issues.push({ unit: i + 1, category: "correctness", type: "spelling", title: "Correct the spelling", original: m[0], replacement: ({ recieve: "receive", teh: "the", alot: "a lot", definately: "definitely", untill: "until" } as any)[m[0].toLowerCase()], explanation: "This word is misspelled." });
+          const w = u.match(/in order to/i);
+          if (w) issues.push({ unit: i + 1, category: "clarity", type: "wordiness", title: "Remove wordiness", original: w[0], replacement: "to", explanation: "“To” says the same in fewer words." });
+          const g = u.match(/\bvery good\b/i);
+          if (g) issues.push({ unit: i + 1, category: "engagement", type: "word choice", title: "Choose a livelier word", original: g[0], replacement: "excellent", explanation: "A stronger word is more engaging." });
+        });
+        return JSON.stringify({ issues, tone: "Friendly, neutral", tone_fits: true });
+      }
+      return "Here is the rewritten text (mock).";
+    }
+    case "translate_text": await new Promise((r) => setTimeout(r, 500)); return { text: "(mock translation) " + a.text, from: "en" };
+    case "define_word": await new Promise((r) => setTimeout(r, 400)); return `${a.word}  /mock/\n\nadverb\n1. At this moment, at present, now.`;
     case "npu_dirs": return { found: ["qwen3.5:4b", "gemma3:4b"], foreign: ["GGUF (llama.cpp / LM Studio / Ollama): Qwen3-8B-Q4_K_M.gguf, gemma-3-12b-it-Q4_0.gguf"], runtime: "C:\\Users\\Minh\\AppData\\Roaming\\app.nelo.mail\\runtime", runtime_default: "C:\\Users\\Minh\\AppData\\Roaming\\app.nelo.mail\\runtime", runtime_size: 41e6, models: "D:\\AI\\models", models_default: "C:\\Users\\Minh\\.flm\\models", models_size: 3.6e9 };
     case "npu_set_dirs": {
       for (let i = 1; i <= 10; i++) { window.dispatchEvent(new CustomEvent("mock:npu-progress", { detail: { kind: "move", tag: "models", percent: i * 10, done: i, total: 10, line: "", finished: false, error: "" } })); await msleep(120); }

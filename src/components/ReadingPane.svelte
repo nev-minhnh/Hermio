@@ -227,6 +227,35 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
       }
     });
     doc.addEventListener("contextmenu", (e) => e.stopPropagation());
+    // Hermio AI on the email: double-click a word for its meaning; Ctrl+Alt+T / D on a selection.
+    const assistOn = (mode: "translate" | "define", px?: number, py?: number) => {
+      const sel = doc.getSelection();
+      const text = sel?.toString().trim() ?? "";
+      if (!text || !frame) return;
+      const off = frame.getBoundingClientRect();
+      const rr = sel!.rangeCount ? sel!.getRangeAt(0).getBoundingClientRect() : null;
+      const x = off.left + (px ?? rr?.left ?? 40);
+      const y = off.top + (py ?? rr?.bottom ?? 40);
+      const block = (sel!.anchorNode?.parentElement?.closest("p,div,li,td,h1,h2,h3,h4,blockquote") as HTMLElement | null)?.innerText ?? text;
+      store.openAssist(mode, x, y, { text, context: block.slice(0, 1200), selection: true });
+    };
+    doc.addEventListener("dblclick", (e) => {
+      if (!store.settings.define_on_dblclick) return;
+      setTimeout(() => {
+        const s = doc.getSelection()?.toString().trim() ?? "";
+        if (s && s.split(/\s+/).length <= 3 && s.length <= 48) assistOn("define", e.clientX, e.clientY);
+      }, 0);
+    });
+    doc.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.altKey && ["t", "d"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        assistOn(e.key.toLowerCase() === "t" ? "translate" : "define");
+      }
+    });
+    // Clicks inside the email don't reach the window: close the popup from here.
+    doc.addEventListener("pointerdown", () => {
+      if (store.assist) store.assist = null;
+    });
     doc.addEventListener(
       "wheel",
       (e) => {

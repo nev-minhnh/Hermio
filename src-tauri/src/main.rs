@@ -23,6 +23,7 @@ mod autoconfig;
 mod smtp;
 mod state;
 mod notify;
+mod writing;
 mod toast;
 mod reminders;
 mod invites;
@@ -246,6 +247,9 @@ fn main() {
             commands::test_notification,
             commands::reminder_skip,
             commands::set_unread_badge,
+            commands::ai_complete,
+            commands::translate_text,
+            commands::define_word,
             commands::invite_info,
             commands::invite_respond,
             commands::notification_pending,

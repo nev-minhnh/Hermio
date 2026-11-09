@@ -14,6 +14,7 @@
   import SettingsView from "./components/SettingsView.svelte";
   import Toasts from "./components/Toasts.svelte";
   import ReminderStack from "./components/ReminderStack.svelte";
+  import AssistPopup from "./components/AssistPopup.svelte";
   import Welcome from "./components/Welcome.svelte";
   import SendQueue from "./components/SendQueue.svelte";
   import { showWindow } from "./lib/tauri";
@@ -179,6 +180,9 @@
   </div>
   <Toasts />
   <ReminderStack />
+  {#if store.assist}
+    {#key store.assist.key}<AssistPopup open={store.assist} />{/key}
+  {/if}
   {#if store.busy > 0}
     <div class="busybar" role="progressbar" aria-label={t("Working…")} transition:fade={{ duration: 200 }}><span></span></div>
   {/if}

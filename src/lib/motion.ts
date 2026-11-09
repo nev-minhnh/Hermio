@@ -93,3 +93,12 @@ export function autoHeight(node: HTMLElement) {
   ro.observe(node.firstElementChild ?? node);
   return { destroy: () => ro.disconnect() };
 }
+
+/**
+ * Move an element to <body> (`use:portal`), so `position: fixed` is relative to the window even
+ * inside transformed (animating) containers.
+ */
+export function portal(node: HTMLElement) {
+  document.body.appendChild(node);
+  return { destroy: () => node.remove() };
+}

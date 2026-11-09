@@ -3,6 +3,34 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.0 — Writing assistant
+
+Themisio's Grammarly-style assistant, in the composer:
+
+- **Check writing** (Hermio AI ▸ Check writing, Ctrl+Alt+G, or the round button at the bottom
+  right of the composer): every paragraph you wrote — not the quoted message or the signature — is
+  checked for **Correctness, Clarity, Engagement and Delivery** against your writing goals.
+  Issues are underlined (red, blue, green, purple); hover one for a card with the fix (click the
+  green button to accept), why, *Dismiss* and *Add to dictionary*. Fixes are normal edits, so
+  Ctrl+Z undoes them. Only changed paragraphs are sent again; other suggestions in a paragraph
+  survive accepting one.
+- **Panel**: overall score (0–100), counts per criterion (click to filter), tone, and tabs for
+  Suggestions, **Goals** (domain, formality, audience, intent, language variety, personal
+  dictionary), **Write** (more formal, friendlier, concise, expand, simplify, improve, ideas,
+  summarise, or your own prompt — insert or replace) and **Report** (words, sentences, reading
+  time, most used words, your progress).
+- **Hermio AI popup — Ask AI / Translate / Meaning**: Ctrl+Alt+K / T / D in the composer (or
+  the Hermio AI menu); in emails, double-click a word for its meaning or select text and press
+  Ctrl+Alt+T / D. Translate uses Google Translate or any connected model (Vietnamese ↔ English
+  or 16 other languages); Meaning uses the Free Dictionary for English words and the model
+  otherwise. Replace / Insert / Copy.
+- Fixed compared to Themisio: the popup opens **at the pointer** and no longer closes by itself
+  0.35 s after opening — it closes with Esc, a click outside, or after you have been on it and
+  moved away. Tabs and buttons are readable in both themes (active tab in the accent colour with
+  white text, outlined secondary buttons, a solid green fix button).
+- Settings ▸ AI assistant ▸ **Writing assistant**: model, *Check as you type* (off by default —
+  every check is a request), *Double-click a word to see its meaning*, standing instructions.
+
 ## 0.6.4
 
 - New-mail notifications: the subject is bold; From and To sit on consecutive lines with no
