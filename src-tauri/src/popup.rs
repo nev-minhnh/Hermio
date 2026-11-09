@@ -9,6 +9,10 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
 pub const LABEL: &str = "notify";
+/// Must match the main window's `additionalBrowserArgs` (tauri.conf.json): windows of one app
+/// share a WebView2 environment only when their browser arguments are identical. They cap the
+/// memory WebView2's GPU process may use for drawing (it took ~650 MB on a high-DPI screen).
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI --force-gpu-mem-available-mb=256 --force-gpu-mem-discardable-limit-mb=64";
 const WIDTH: f64 = 372.0;
 const MARGIN: f64 = 12.0;
 
@@ -60,6 +64,7 @@ pub fn push(app: &AppHandle, item: PopupItem, sound: bool) {
     if app.get_webview_window(LABEL).is_none() {
         let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#notify".into()))
             .title("Hermio")
+            .additional_browser_args(BROWSER_ARGS)
             .decorations(false)
             .transparent(true)
             .shadow(false)

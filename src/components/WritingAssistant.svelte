@@ -994,7 +994,6 @@
     flex-direction: column;
     background: var(--surface);
     border-left: 1px solid var(--border);
-    will-change: transform;
   }
   .wa-panel header {
     display: flex;

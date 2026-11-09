@@ -215,6 +215,7 @@ fn main() {
             commands::data_dir,
             popup::popup_take,
             diag::resource_usage,
+            diag::trim_memory,
             popup::popup_layout,
             popup::popup_open,
             commands::open_url,

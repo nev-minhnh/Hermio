@@ -8,6 +8,9 @@ use serde::Serialize;
 pub struct Proc {
     pub pid: u32,
     pub name: String,
+    /// What the process does for WebView2: "browser", "renderer" (the page: JavaScript, layout,
+    /// pictures), "gpu" (drawing), "utility"…; empty for Hermio itself.
+    pub kind: String,
     /// Memory in use right now (working set), bytes.
     pub working_set: u64,
     /// Memory committed to this process alone, bytes.
@@ -98,9 +101,69 @@ pub fn usage() -> Usage {
     Usage::default()
 }
 
+/// pid → kind, from WebView2 itself (needs the main thread, where the webview lives).
+#[cfg(windows)]
+async fn kinds(app: &tauri::AppHandle) -> std::collections::HashMap<u32, String> {
+    use tauri::Manager;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let Some(w) = app.get_webview_window("main") else { return Default::default() };
+    let _ = w.with_webview(move |wv| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::*;
+        use windows::core::Interface;
+        let mut out = std::collections::HashMap::new();
+        if let Ok(env) = wv.environment().cast::<ICoreWebView2Environment8>() {
+            if let Ok(list) = env.GetProcessInfos() {
+                let mut n = 0u32;
+                let _ = list.Count(&mut n);
+                for i in 0..n {
+                    if let Ok(p) = list.GetValueAtIndex(i) {
+                        let (mut pid, mut k) = (0i32, COREWEBVIEW2_PROCESS_KIND_BROWSER);
+                        let _ = p.ProcessId(&mut pid);
+                        let _ = p.Kind(&mut k);
+                        let name = match k {
+                            COREWEBVIEW2_PROCESS_KIND_BROWSER => "browser",
+                            COREWEBVIEW2_PROCESS_KIND_RENDERER => "renderer",
+                            COREWEBVIEW2_PROCESS_KIND_GPU => "gpu",
+                            COREWEBVIEW2_PROCESS_KIND_UTILITY => "utility",
+                            _ => "other",
+                        };
+                        out.insert(pid as u32, name.to_string());
+                    }
+                }
+            }
+        }
+        let _ = tx.send(out);
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), rx).await.ok().and_then(|r| r.ok()).unwrap_or_default()
+}
+
 #[tauri::command]
-pub fn resource_usage() -> Usage {
-    usage()
+pub async fn resource_usage(app: tauri::AppHandle) -> Usage {
+    #[allow(unused_mut)]
+    let mut u = tauri::async_runtime::spawn_blocking(usage).await.unwrap_or_default();
+    #[cfg(windows)]
+    {
+        let k = kinds(&app).await;
+        for p in &mut u.processes {
+            if let Some(x) = k.get(&p.pid) {
+                p.kind = x.clone();
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    u
+}
+
+/// "Free memory" (Settings → About): WebView2 drops what it can, then goes back to normal.
+#[tauri::command]
+pub async fn trim_memory(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        low_memory(&w, true);
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        low_memory(&w, false);
+    }
 }
 
 /// Hidden in the tray: ask WebView2 to keep as little memory as it can (caches are dropped; the

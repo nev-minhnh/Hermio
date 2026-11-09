@@ -217,6 +217,7 @@
   let cpuPct = $state(0);
   let lastCpu: [number, number] | null = null;
   const mb = (b: number) => `${Math.round(b / 1048576)} MB`;
+  const kindLabel = (k: string) => ({ browser: t("manager"), renderer: t("page"), gpu: t("graphics (GPU)"), utility: t("service") } as Record<string, string>)[k] ?? k;
   $effect(() => {
     if (tab !== "about") return;
     let alive = true;
@@ -238,7 +239,7 @@
   });
   function copyUsage() {
     if (!usage) return;
-    const lines = [`Hermio ${__APP_VERSION__} — private ${mb(usage.total_private)}, working set ${mb(usage.total_working_set)}, CPU now ${cpuPct}%`, ...usage.processes.map((p) => `${p.name} #${p.pid}: private ${mb(p.private)}, working set ${mb(p.working_set)}, CPU ${(p.cpu_ms / 1000).toFixed(1)} s`)];
+    const lines = [`Hermio ${__APP_VERSION__} — private ${mb(usage.total_private)}, working set ${mb(usage.total_working_set)}, CPU now ${cpuPct}%`, ...usage.processes.map((p) => `${p.name} #${p.pid}${p.kind ? ` (${p.kind})` : ""}: private ${mb(p.private)}, working set ${mb(p.working_set)}, CPU ${(p.cpu_ms / 1000).toFixed(1)} s`)];
     navigator.clipboard.writeText(lines.join("\n")).then(() => store.success(t("Copied to the clipboard")));
   }
 
@@ -680,10 +681,13 @@
             <table class="utable small">
               <thead><tr><th>{t("Process")}</th><th>{t("Private")}</th><th>{t("In use")}</th><th>{t("CPU time")}</th></tr></thead>
               <tbody>
-                {#each usage.processes as p (p.pid)}<tr><td>{p.name} <span class="muted">#{p.pid}</span></td><td>{mb(p.private)}</td><td>{mb(p.working_set)}</td><td>{(p.cpu_ms / 1000).toFixed(1)} s</td></tr>{/each}
+                {#each usage.processes as p (p.pid)}<tr><td>{p.name} <span class="muted">#{p.pid}</span>{#if p.kind}<span class="kind">{kindLabel(p.kind)}</span>{/if}</td><td>{mb(p.private)}</td><td>{mb(p.working_set)}</td><td>{(p.cpu_ms / 1000).toFixed(1)} s</td></tr>{/each}
               </tbody>
             </table>
-            <button class="btn subtle" onclick={copyUsage}><Icon name="copy" size={15} />{t("Copy")}</button>
+            <div class="row">
+              <button class="btn subtle" onclick={copyUsage}><Icon name="copy" size={15} />{t("Copy")}</button>
+              <button class="btn subtle" onclick={() => api.trimMemory().then(() => store.success(t("Memory freed")))} title={t("Ask WebView2 to drop its caches now")}><Icon name="sync" size={15} />{t("Free memory")}</button>
+            </div>
           {:else}
             <span class="spinner"></span>
           {/if}
@@ -1435,5 +1439,13 @@
   .utable th {
     color: var(--text-3);
     font-weight: 600;
+  }
+  .utable .kind {
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    color: var(--text-2);
+    font-size: 0.74rem;
   }
 </style>

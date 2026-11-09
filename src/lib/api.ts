@@ -372,7 +372,8 @@ export const api = {
   deleteEvent: (id: number) => invoke<void>("delete_event", { id }),
   syncCalendars: () => invoke<void>("sync_calendars"),
   dataDir: () => invoke<string>("data_dir"),
+  trimMemory: () => invoke<void>("trim_memory"),
   resourceUsage: () =>
-    invoke<{ processes: { pid: number; name: string; working_set: number; private: number; cpu_ms: number }[]; total_working_set: number; total_private: number; total_cpu_ms: number }>("resource_usage"),
+    invoke<{ processes: { pid: number; name: string; kind: string; working_set: number; private: number; cpu_ms: number }[]; total_working_set: number; total_private: number; total_cpu_ms: number }>("resource_usage"),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
 };

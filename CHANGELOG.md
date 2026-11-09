@@ -3,6 +3,11 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.4
+
+- Less memory: WebView2's GPU process (≈650 MB of Hermio's 820 MB on a high-DPI screen) is capped to 256 MB for drawing, and the message rows and writing panel no longer each ask for their own GPU layer.
+- Resource use (Settings → About) labels each WebView2 process (page, graphics, manager, service) and has a Free memory button.
+
 ## 0.8.3
 
 - Settings → About → **Resource use**: private memory, working set, CPU now and per-process figures for Hermio and its WebView2 processes (refreshed every 2 s), with a Copy button — to measure what makes Hermio heavy.

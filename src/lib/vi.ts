@@ -1209,4 +1209,11 @@ export const vi: Record<string, string> = {
   "CPU now": "CPU hiện tại",
   "Processes": "Tiến trình",
   "CPU time": "Thời gian CPU",
+  "Memory freed": "Đã giải phóng bộ nhớ",
+  "Ask WebView2 to drop its caches now": "Yêu cầu WebView2 bỏ bộ nhớ đệm ngay",
+  "Free memory": "Giải phóng bộ nhớ",
+  "manager": "quản lý",
+  "page": "trang",
+  "graphics (GPU)": "đồ hoạ (GPU)",
+  "service": "dịch vụ",
 };

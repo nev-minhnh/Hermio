@@ -242,11 +242,11 @@ export async function mockInvoke(cmd: string, a: any): Promise<unknown> {
     case "popup_take": { const k = (globalThis as any).__popupTaken; (globalThis as any).__popupTaken = true; return k ? [] : [
       { key: "a", subject: "Có phải bạn vừa đăng nhập từ thiết bị mới ở gần Phúc Lý không?", from: "security@facebookmail.com", to: "minhnh.mad@gmail.com", time: "1:02 AM", launch: "msg:1:1", from_label: "From:", to_label: "To:" },
       { key: "b", subject: "Thử logo lần 2", from: "huu.nguyen2@monash.edu", to: "l33zin3@gmail.com", time: "1:08 AM", launch: "msg:2:1", from_label: "From:", to_label: "To:" }]; }
-    case "popup_layout": case "popup_open": return null;
+    case "popup_layout": case "popup_open": case "trim_memory": return null;
     case "resource_usage": return { processes: [
       { pid: 1, name: "Hermio.exe", working_set: 61e6, private: 38e6, cpu_ms: 4200 },
-      { pid: 2, name: "msedgewebview2.exe", working_set: 120e6, private: 70e6, cpu_ms: 9100 },
-      { pid: 3, name: "msedgewebview2.exe", working_set: 210e6, private: 160e6, cpu_ms: 21000 },
+      { pid: 2, name: "msedgewebview2.exe", kind: "renderer", working_set: 120e6, private: 70e6, cpu_ms: 9100 },
+      { pid: 3, name: "msedgewebview2.exe", kind: "gpu", working_set: 210e6, private: 160e6, cpu_ms: 21000 },
       { pid: 4, name: "msedgewebview2.exe", working_set: 48e6, private: 22e6, cpu_ms: 800 }], total_working_set: 439e6, total_private: 290e6, total_cpu_ms: 35100 };
     case "set_setting": settings[a.key] = a.value; return null;
     case "google_config": return { client_id: "1234.apps.googleusercontent.com", has_secret: true };

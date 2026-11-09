@@ -640,7 +640,6 @@
     transition:
       background 120ms var(--ease),
       transform 220ms var(--ease);
-    will-change: transform;
   }
   .msg::after {
     content: "";
