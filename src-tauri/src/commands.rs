@@ -1275,8 +1275,8 @@ pub fn test_notification(state: S) -> R<()> {
         .app
         .notification()
         .builder()
-        .title("Hermio")
-        .body("Notifications are working. New mail will show up like this.")
+        .title("New email")
+        .body("From: Hermio\nTo: you\nSubject: Notifications are working — new mail will look like this")
         .show()
         .map_err(e)
 }

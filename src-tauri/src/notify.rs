@@ -9,11 +9,78 @@ use crate::state::AppState;
 use tauri_plugin_notification::NotificationExt;
 
 /// One new message worth telling the user about.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NewMail {
     pub id: i64,
-    pub from: String,
+    pub from_name: String,
+    pub from_addr: String,
+    /// "Name <addr>, addr, …" as stored for the message.
+    pub to: String,
+    pub cc: String,
     pub subject: String,
+}
+
+impl NewMail {
+    /// "Lan Phạm <lan@example.com>", or just the address.
+    fn from_line(&self) -> String {
+        match (self.from_name.trim(), self.from_addr.trim()) {
+            ("", a) => a.to_string(),
+            (n, "") => n.to_string(),
+            (n, a) if n.eq_ignore_ascii_case(a) => a.to_string(),
+            (n, a) => format!("{n} <{a}>"),
+        }
+    }
+    fn short_from(&self) -> String {
+        if self.from_name.trim().is_empty() { self.from_addr.clone() } else { self.from_name.trim().to_string() }
+    }
+}
+
+/// Recipients for one line: "me@x.com, Bình +2". `own` is shown when the list is empty
+/// (Bcc / undisclosed recipients) and listed first when the user is among them.
+fn to_line(to: &str, cc: &str, own: &str) -> String {
+    let all: Vec<&str> = to.split(", ").chain(cc.split(", ")).map(str::trim).filter(|s| !s.is_empty()).collect();
+    if all.is_empty() {
+        return own.to_string();
+    }
+    let addr = |s: &str| s.rsplit_once('<').map(|(_, a)| a.trim_end_matches('>').trim().to_string()).unwrap_or_else(|| s.to_string());
+    let label = |s: &str| match s.rsplit_once('<') {
+        Some((n, _)) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => addr(s),
+    };
+    let mut out: Vec<String> = vec![];
+    if let Some(me) = all.iter().find(|s| addr(s).eq_ignore_ascii_case(own)) {
+        out.push(addr(me));
+    }
+    for s in &all {
+        if out.len() >= 2 {
+            break;
+        }
+        if !addr(s).eq_ignore_ascii_case(own) {
+            out.push(label(s));
+        }
+    }
+    let rest = all.len().saturating_sub(out.len());
+    if rest > 0 {
+        format!("{} +{rest}", out.join(", "))
+    } else {
+        out.join(", ")
+    }
+}
+
+/// Windows shows at most four lines of body text; long From/To lines are cut so they keep to
+/// one line each and the subject stays visible.
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(max - 1).collect::<String>().trim_end())
+    }
+}
+
+/// The toast text: "From: …", "To: …", "Subject: …" on their own lines.
+fn body_for(m: &NewMail, account: &str) -> String {
+    let subject = if m.subject.trim().is_empty() { "(No subject)" } else { m.subject.trim() };
+    format!("From: {}\nTo: {}\nSubject: {}", clip(&m.from_line(), 46), clip(&to_line(&m.to, &m.cc, account), 48), subject)
 }
 
 /// Mail sorted into a group that is hidden from the inbox is only announced when the user
@@ -57,23 +124,46 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
             crate::sync::log_plain(state, "warn", format!("Couldn't show a notification: {e}"));
         }
     };
-    let subject = |m: &NewMail| if m.subject.trim().is_empty() { "(No subject)".to_string() } else { m.subject.clone() };
     if items.len() <= 3 {
         for m in items {
-            let from = if m.from.trim().is_empty() { account } else { m.from.as_str() };
-            show_for(m.id, from, &subject(m));
+            show_for(m.id, "New email", &body_for(m, account));
         }
     } else {
-        let mut senders: Vec<&str> = vec![];
+        let mut senders: Vec<String> = vec![];
         for m in items {
-            if !m.from.is_empty() && !senders.contains(&m.from.as_str()) {
-                senders.push(&m.from);
+            let f = m.short_from();
+            if !f.is_empty() && !senders.contains(&f) {
+                senders.push(f);
             }
         }
-        let names = if senders.len() > 3 { format!("{} and {} more", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
-        // A click on the summary opens the newest of them, in its inbox.
-        let newest = items.iter().map(|m| m.id).max().unwrap_or(0);
-        show_for(newest, &format!("{} new messages · {account}", items.len()), &format!("From {names}"));
+        let from = if senders.len() > 3 { format!("{} and {} more", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
+        // Newest first (highest id); a click opens it, in its inbox.
+        let newest = items.iter().max_by_key(|m| m.id).unwrap();
+        let subject = if newest.subject.trim().is_empty() { "(No subject)" } else { newest.subject.trim() };
+        let body = format!("From: {}\nTo: {account}\nSubject: {subject} (+{} more)", clip(&from, 46), items.len() - 1);
+        show_for(newest.id, &format!("{} new emails", items.len()), &body);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toast_lines() {
+        let m = NewMail {
+            id: 1,
+            from_name: "Lan Phạm".into(),
+            from_addr: "lan@uni.edu".into(),
+            to: "Team <team@uni.edu>, me@x.com, Bình <binh@x.com>".into(),
+            cc: "An <an@x.com>".into(),
+            subject: "Họp nhóm".into(),
+        };
+        assert_eq!(body_for(&m, "me@x.com"), "From: Lan Phạm <lan@uni.edu>\nTo: me@x.com, Team +2\nSubject: Họp nhóm");
+        let bcc = NewMail { from_addr: "news@shop.vn".into(), ..Default::default() };
+        assert_eq!(body_for(&bcc, "me@x.com"), "From: news@shop.vn\nTo: me@x.com\nSubject: (No subject)");
+        assert_eq!(to_line("a@x.com", "", "me@x.com"), "a@x.com");
+        assert_eq!(clip("abcdef", 4), "abc…");
     }
 }
 

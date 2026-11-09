@@ -3,6 +3,13 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.5.3
+
+- New-mail notifications now read **New email** with three lines:
+  `From: Name <address>`, `To: …` (your address first, then up to two other recipients and
+  "+n"; your own address when you were Bcc'd) and `Subject: …`. Long From/To lines are shortened
+  so the subject always fits. The summary for a burst follows the same layout.
+
 ## 0.5.2
 
 - **Clicking a new-mail notification opens that email.** Hermio comes back from the tray (or
