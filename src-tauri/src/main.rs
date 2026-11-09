@@ -26,6 +26,7 @@ mod notify;
 mod writing;
 mod toast;
 mod popup;
+mod diag;
 mod reminders;
 mod invites;
 mod sync;
@@ -37,6 +38,7 @@ use tauri::{Emitter, Manager, WindowEvent};
 
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        diag::low_memory(&w, false);
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -66,8 +68,20 @@ fn main() {
                 if w.label() == "main" && close_to_tray(w.app_handle()) {
                     api.prevent_close();
                     let _ = w.hide();
-                    // In the tray: release the on-device model from the NPU to save battery.
+                    // In the tray: release the on-device model from the NPU to save battery,
+                    // and let WebView2 drop its caches.
                     npu::hibernate();
+                    if let Some(ww) = w.app_handle().get_webview_window("main") {
+                        diag::low_memory(&ww, true);
+                    }
+                }
+            }
+            // Back on screen (tray, a notification, the taskbar): normal memory use again.
+            if let WindowEvent::Focused(true) = ev {
+                if w.label() == "main" {
+                    if let Some(ww) = w.app_handle().get_webview_window("main") {
+                        diag::low_memory(&ww, false);
+                    }
                 }
             }
         })
@@ -200,6 +214,7 @@ fn main() {
             commands::sync_calendars,
             commands::data_dir,
             popup::popup_take,
+            diag::resource_usage,
             popup::popup_layout,
             popup::popup_open,
             commands::open_url,

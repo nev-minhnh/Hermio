@@ -211,6 +211,37 @@
       backupBusy = false;
     }
   }
+  // ----- resource use (About) -----
+  type Usage = Awaited<ReturnType<typeof api.resourceUsage>>;
+  let usage = $state<Usage | null>(null);
+  let cpuPct = $state(0);
+  let lastCpu: [number, number] | null = null;
+  const mb = (b: number) => `${Math.round(b / 1048576)} MB`;
+  $effect(() => {
+    if (tab !== "about") return;
+    let alive = true;
+    const tick = async () => {
+      const u = await api.resourceUsage().catch(() => null);
+      if (!alive || !u) return;
+      const now = performance.now();
+      if (lastCpu) cpuPct = Math.max(0, Math.round(((u.total_cpu_ms - lastCpu[0]) / Math.max(1, now - lastCpu[1]) / (navigator.hardwareConcurrency || 1)) * 100));
+      lastCpu = [u.total_cpu_ms, now];
+      usage = u;
+    };
+    tick();
+    const h = setInterval(tick, 2000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+      lastCpu = null;
+    };
+  });
+  function copyUsage() {
+    if (!usage) return;
+    const lines = [`Hermio ${__APP_VERSION__} — private ${mb(usage.total_private)}, working set ${mb(usage.total_working_set)}, CPU now ${cpuPct}%`, ...usage.processes.map((p) => `${p.name} #${p.pid}: private ${mb(p.private)}, working set ${mb(p.working_set)}, CPU ${(p.cpu_ms / 1000).toFixed(1)} s`)];
+    navigator.clipboard.writeText(lines.join("\n")).then(() => store.success(t("Copied to the clipboard")));
+  }
+
   // ----- moving all data -----
   // The job lives in the store: it keeps running (and its progress stays) while you go elsewhere.
   const dataBusy = $derived(!!store.dataJob);
@@ -636,6 +667,27 @@
         <p class="ver"><b>{t("Version {v}", { v: __APP_VERSION__ })}</b> <span class="muted">· {t("built {d}", { d: __BUILD_DATE__ })}</span></p>
         <p class="muted">{t("Data (mail index, settings, downloaded mail) is stored in Documents\\Hermio_Emails; passwords and tokens are stored in Windows Credential Manager.")}</p>
         <p class="muted small">{t("Open source under the MIT or Apache-2.0 licence.")} <button class="lnk" onclick={() => api.openUrl("https://github.com/nev-minhnh/Hermio")}>github.com/nev-minhnh/Hermio</button></p>
+        <fieldset class="usage">
+          <legend>{t("Resource use")}</legend>
+          <p class="small muted" style="margin:0 0 8px">{t("Memory and CPU time of Hermio and the WebView2 processes it runs (refreshed every 2 s while this page is open).")}</p>
+          {#if usage}
+            <div class="ustats">
+              <div><b>{mb(usage.total_private)}</b><span>{t("Private memory")}</span></div>
+              <div><b>{mb(usage.total_working_set)}</b><span>{t("In use (working set)")}</span></div>
+              <div><b>{cpuPct}%</b><span>{t("CPU now")}</span></div>
+              <div><b>{usage.processes.length}</b><span>{t("Processes")}</span></div>
+            </div>
+            <table class="utable small">
+              <thead><tr><th>{t("Process")}</th><th>{t("Private")}</th><th>{t("In use")}</th><th>{t("CPU time")}</th></tr></thead>
+              <tbody>
+                {#each usage.processes as p (p.pid)}<tr><td>{p.name} <span class="muted">#{p.pid}</span></td><td>{mb(p.private)}</td><td>{mb(p.working_set)}</td><td>{(p.cpu_ms / 1000).toFixed(1)} s</td></tr>{/each}
+              </tbody>
+            </table>
+            <button class="btn subtle" onclick={copyUsage}><Icon name="copy" size={15} />{t("Copy")}</button>
+          {:else}
+            <span class="spinner"></span>
+          {/if}
+        </fieldset>
       {:else if tab === "backup"}
         <h2>{t("Backup & transfer")}</h2>
         <p class="muted">{t("Save all settings to a file and load them into another copy of Hermio — a new version, a new portable folder or another PC. Mail itself isn't included: it downloads again from the server.")}</p>
@@ -1334,5 +1386,54 @@
     background: var(--surface);
     font-family: inherit;
     font-size: 0.78rem;
+  }
+  .usage {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-l);
+    padding: 10px 14px 12px;
+  }
+  .usage legend {
+    padding: 0 6px;
+    font-weight: 600;
+  }
+  .ustats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .ustats div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .ustats b {
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .ustats span {
+    font-size: 0.78rem;
+    color: var(--text-3);
+  }
+  .utable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .utable th,
+  .utable td {
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .utable th {
+    color: var(--text-3);
+    font-weight: 600;
   }
 </style>

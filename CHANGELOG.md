@@ -3,6 +3,12 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.3
+
+- Settings → About → **Resource use**: private memory, working set, CPU now and per-process figures for Hermio and its WebView2 processes (refreshed every 2 s), with a Copy button — to measure what makes Hermio heavy.
+- Hidden in the tray, the window's WebView2 is asked to use as little memory as it can (caches dropped; mail, notifications and the badge keep working); back to normal when shown.
+- The new-mail popup's window is closed 30 s after its last popup (it's recreated for the next one), so its WebView2 process doesn't stay in memory.
+
 ## 0.8.2
 
 - Pictures (composer and signature): Gmail-style bar under a clicked picture — Small · Medium · Best fit · Original size · Edit alt text · Remove (the % presets didn't work inside tables). A table cell or box that only holds the picture now follows its size, so shrinking a logo also closes the gap beside it.

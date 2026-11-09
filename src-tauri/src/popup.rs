@@ -90,6 +90,17 @@ pub fn popup_layout(app: AppHandle, height: f64) {
     let Some(w) = app.get_webview_window(LABEL) else { return };
     if height <= 0.0 {
         let _ = w.hide();
+        // Nothing to show for a while: close the popup's window (its WebView2 process uses
+        // memory); it's created again for the next new mail.
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            if let Some(w) = app2.get_webview_window(LABEL) {
+                if !w.is_visible().unwrap_or(true) && QUEUE.lock().unwrap().is_empty() {
+                    let _ = w.destroy();
+                }
+            }
+        });
         return;
     }
     let mon = app
