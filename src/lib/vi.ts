@@ -1021,4 +1021,8 @@ export const vi: Record<string, string> = {
   "Pin": "Ghim",
   "Email": "Email",
   "Automate your inbox flow.": "Tự động hoá dòng thư của bạn.",
+  "Notification layout": "Kiểu thông báo",
+  "“Send a test notification” shows both; pick the one that looks right on your PC.": "Nút “Gửi thông báo thử” sẽ hiện cả hai mẫu; chọn mẫu hiển thị đẹp nhất trên máy bạn.",
+  "Layout 1": "Mẫu 1",
+  "Layout 2": "Mẫu 2",
 };

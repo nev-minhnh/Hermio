@@ -536,6 +536,13 @@
               </button>
             {/if}
             <div class="field badge-opt">
+              <span>{t("Notification layout")}<br /><span class="muted small">{t("“Send a test notification” shows both; pick the one that looks right on your PC.")}</span></span>
+              <div class="segmented" use:pill>
+                <button class:on={store.settings.toast_layout !== 2} onclick={() => store.set("toast_layout", 1)}>{t("Layout 1")}</button>
+                <button class:on={store.settings.toast_layout === 2} onclick={() => store.set("toast_layout", 2)}>{t("Layout 2")}</button>
+              </div>
+            </div>
+            <div class="field badge-opt">
               <span>{t("Unread count on the taskbar icon")}<br /><span class="muted small">{t("All unread mail in the inboxes of every signed-in mailbox. Also shown on the tray icon.")}</span></span>
               <div class="segmented" use:pill>
                 <button class:on={store.settings.taskbar_badge === "count"} onclick={() => store.set("taskbar_badge", "count")}>{t("Number")}</button>

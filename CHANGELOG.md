@@ -3,6 +3,15 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.6.4
+
+- New-mail notifications: the subject is bold; From and To sit on consecutive lines with no
+  gap; the gap under the subject is about half what it was. Windows 11 draws a toast's title
+  in regular weight with a fixed gap, so the subject is now bold content text, and the title
+  Windows requires is either invisible (layout 1) or a small "Hermio" line at the bottom
+  (layout 2). *Send a test notification* shows both; Settings → Mail → *Notification layout*
+  picks one.
+
 ## 0.6.3
 
 - **AI Assistant** button (was "Assistant"). Opening the panel no longer re-runs the last AI

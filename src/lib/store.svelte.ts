@@ -23,6 +23,8 @@ export interface Settings {
   taskbar_badge: BadgeMode;
   /** The navigation rail (Mail / Calendar / Settings) is hidden behind a line at the left edge. */
   rail_collapsed: boolean;
+  /** New-mail notification layout (two ways Windows can draw it; see "Send a test notification"). */
+  toast_layout: 1 | 2;
   /** Calendar reminders (12 h … 10 min before). */
   reminders: boolean;
   confirm_delete: boolean;
@@ -63,6 +65,7 @@ export const defaults: Settings = {
   notifications: true,
   notify_groups: false,
   reminders: true,
+  toast_layout: 1,
   rail_collapsed: false,
   taskbar_badge: "count",
   confirm_delete: false,
