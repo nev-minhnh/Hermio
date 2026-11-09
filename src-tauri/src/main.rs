@@ -127,7 +127,11 @@ fn main() {
             // A restore prepared in Backup & transfer is swapped in now, before the database opens.
             let restored = backup::apply_pending(&dir);
             // Lets Windows show our toasts (also for the portable copy, which has no shortcut).
-            notify::register_app_id(&app.config().identifier, &dir);
+            // The toast icon lives in local AppData, not in Documents\Hermio_Emails: that folder
+            // may be synced by OneDrive (a cloud-only file can't be read by Windows' notification
+            // service) and it moved in 0.7.3, which left Windows pointing at a missing file.
+            let icon_dir = app.path().app_local_data_dir().unwrap_or_else(|_| dir.clone());
+            notify::register_app_id(&app.config().identifier, &icon_dir);
             let db = db::Db::open(&dir).map_err(|e| format!("Could not open the database: {e:#}"))?;
             let state = Arc::new(state::AppState {
                 db: Arc::new(db),

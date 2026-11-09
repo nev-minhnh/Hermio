@@ -3,6 +3,10 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.7.5
+
+- Notifications show the Hermio icon again. Since 0.7.3 the icon file Windows was told to use sat in the data folder, which moved (and may be synced by OneDrive), so Windows showed no icon. It now lives in local AppData under a new name.
+
 ## 0.7.4
 
 - New-mail notifications use one layout: the subject is the title, then From / To with the time on the right. The attribution layout (which made Windows add "Hermio / New notification") and the layout setting are gone.

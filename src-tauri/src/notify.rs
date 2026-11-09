@@ -304,13 +304,15 @@ pub fn skip_reminders(state: &AppState, key: &str) {
 /// removed) has none, so the toasts were silently dropped. Registering the ID under
 /// HKCU\Software\Classes\AppUserModelId works for both and also gives the toast its name and icon.
 #[cfg(windows)]
-pub fn register_app_id(app_id: &str, data_dir: &std::path::Path) {
+pub fn register_app_id(app_id: &str, icon_dir: &std::path::Path) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let icon = data_dir.join("hermio-notify.png");
-    if !icon.exists() {
-        let _ = std::fs::create_dir_all(data_dir);
-        let _ = std::fs::write(&icon, include_bytes!("../icons/128x128@2x.png"));
+    const PNG: &[u8] = include_bytes!("../icons/128x128@2x.png");
+    // A new file name (not the old path) so Windows doesn't keep using a cached, missing icon.
+    let icon = icon_dir.join("hermio-toast-icon.png");
+    if std::fs::metadata(&icon).map(|m| m.len() as usize != PNG.len()).unwrap_or(true) {
+        let _ = std::fs::create_dir_all(icon_dir);
+        let _ = std::fs::write(&icon, PNG);
     }
     let key = format!(r"HKCU\Software\Classes\AppUserModelId\{app_id}");
     for (name, value) in [("DisplayName", "Hermio".to_string()), ("IconUri", icon.to_string_lossy().to_string())] {
