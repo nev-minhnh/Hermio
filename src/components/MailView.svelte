@@ -42,6 +42,7 @@
     bind:size={folderSize}
     min={180}
     max={420}
+    quiet
     onend={() => store.set("folder_pane_width", folderSize)}
   />
   <section class="work">

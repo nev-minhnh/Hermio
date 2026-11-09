@@ -3,6 +3,18 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.6.2
+
+- **Unread count on the taskbar icon**: the total unread mail in the inboxes of every
+  signed-in mailbox, as a red badge on Hermio's taskbar button (Windows overlay icon) and on
+  the tray icon, whose tooltip also gives the number. Settings → Mail → *Unread count on the
+  taskbar icon*: Number / Dot / Off.
+- **Hide the navigation rail** (Mail / Calendar / Settings) with the new *Hide* button: it folds
+  away into a thin line at the window's left edge; hovering the line slides the rail back out
+  for a moment, and *Pin* keeps it open again.
+- The divider between the folder pane and the mail list no longer draws a stray line next to
+  the panel's own edge; it shows a rounded handle only while you hover or drag it.
+
 ## 0.6.1
 
 - Notifications no longer start with "Hermio / New notification". Windows inserts those lines

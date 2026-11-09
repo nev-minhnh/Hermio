@@ -1273,6 +1273,36 @@ pub fn test_notification(state: S) -> R<()> {
     crate::notify::test(&state);
     Ok(())
 }
+/// Unread count on the taskbar button (Windows overlay icon) and the tray icon, both drawn by
+/// the page; `None` removes the badge. The tray tooltip says the number too.
+#[tauri::command]
+pub fn set_unread_badge(app: tauri::AppHandle, count: i64, overlay: Option<Vec<u8>>, tray: Option<Vec<u8>>) -> R<()> {
+    use tauri::image::Image;
+    #[cfg(windows)]
+    use tauri::Manager;
+    let img = |b: Option<Vec<u8>>| -> R<Option<Image<'static>>> {
+        match b {
+            Some(b) if !b.is_empty() => Image::from_bytes(&b).map(Some).map_err(e),
+            _ => Ok(None),
+        }
+    };
+    #[cfg(windows)]
+    if let Some(w) = app.get_webview_window("main") {
+        w.set_overlay_icon(img(overlay)?).map_err(e)?;
+    }
+    #[cfg(not(windows))]
+    let _ = overlay;
+    if let Some(t) = app.tray_by_id("main") {
+        let tip = if count > 0 { format!("Hermio — {count} unread") } else { "Hermio".to_string() };
+        let _ = t.set_tooltip(Some(tip));
+        let icon = match img(tray)? {
+            Some(i) => Some(i),
+            None => app.default_window_icon().cloned(),
+        };
+        let _ = t.set_icon(icon);
+    }
+    Ok(())
+}
 /// "Skip remaining reminders" from the in-app reminder card.
 #[tauri::command]
 pub fn reminder_skip(state: S, key: String) -> R<()> {

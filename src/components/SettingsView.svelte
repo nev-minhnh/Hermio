@@ -535,6 +535,14 @@
                 <span>{t("Also notify for mail sorted into groups")}<br /><span class="muted small">{t("Off: mail that rules or AI put into a group hidden from the inbox arrives quietly.")}</span></span>
               </button>
             {/if}
+            <div class="field badge-opt">
+              <span>{t("Unread count on the taskbar icon")}<br /><span class="muted small">{t("All unread mail in the inboxes of every signed-in mailbox. Also shown on the tray icon.")}</span></span>
+              <div class="segmented" use:pill>
+                <button class:on={store.settings.taskbar_badge === "count"} onclick={() => store.set("taskbar_badge", "count")}>{t("Number")}</button>
+                <button class:on={store.settings.taskbar_badge === "dot"} onclick={() => store.set("taskbar_badge", "dot")}>{t("Dot")}</button>
+                <button class:on={store.settings.taskbar_badge === "off"} onclick={() => store.set("taskbar_badge", "off")}>{t("Off")}</button>
+              </div>
+            </div>
             <button class="toggle rem" onclick={() => store.set("reminders", !store.settings.reminders)}>
               <span class="switch" class:on={store.settings.reminders}></span>
               <span>{t("Remind me before calendar events")}<br /><span class="muted small">{t("12 h, 6 h, 4 h, 2 h, 1 h, 30, 15 and 10 minutes before. Each reminder can skip the rest.")}</span></span>
@@ -945,6 +953,13 @@
     color: var(--text-accent);
     text-decoration: underline;
     font: inherit;
+  }
+  .notif .badge-opt {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
   }
   .notif .rem {
     margin-top: 8px;

@@ -1,5 +1,6 @@
 import { t } from "./i18n.svelte";
 import { setInvokeHooks } from "./tauri";
+import { updateBadge, type BadgeMode } from "./badge";
 import type { NpuStatus, NpuInfo, NpuProgress, NpuAvailable, NpuDirs } from "./api";
 import { api, type Account, type Folder, type Message, type Signature, type Space, type Group, type Outgoing, type OutboxItem, type Suggestion, type Reminder } from "./api";
 import { i18n, syncLang, type Lang } from "./i18n.svelte";
@@ -18,6 +19,10 @@ export interface Settings {
   notifications: boolean;
   /** Also notify for new mail that goes straight into a group hidden from the inbox. */
   notify_groups: boolean;
+  /** Unread count on the taskbar / tray icon: number, a dot, or nothing. */
+  taskbar_badge: BadgeMode;
+  /** The navigation rail (Mail / Calendar / Settings) is hidden behind a line at the left edge. */
+  rail_collapsed: boolean;
   /** Calendar reminders (12 h … 10 min before). */
   reminders: boolean;
   confirm_delete: boolean;
@@ -58,6 +63,8 @@ export const defaults: Settings = {
   notifications: true,
   notify_groups: false,
   reminders: true,
+  rail_collapsed: false,
+  taskbar_badge: "count",
   confirm_delete: false,
   search_mode: "content",
   folder_pane_width: 248,
@@ -239,6 +246,7 @@ class Store {
     this.settings[key] = value;
     this.applyTheme();
     await api.setSetting(key, value);
+    if (key === "taskbar_badge") this.updateBadge();
   }
 
   applyTheme() {
@@ -260,6 +268,7 @@ class Store {
   async loadFolders() {
     this.folders = await api.folders();
     this.counts = await api.unreadCounts(this.settings.space);
+    this.updateBadge();
   }
   async loadSpaces() {
     this.spaces = await api.spaces();
@@ -558,6 +567,13 @@ class Store {
       else this.success(t("All mailboxes are up to date"));
       this.manualAll = false;
     }
+  }
+
+  /** Unread mail in the inboxes of every signed-in mailbox (all spaces), on the taskbar icon. */
+  updateBadge() {
+    const per = (this.counts as { accounts?: Record<string, number> })?.accounts ?? {};
+    const total = Object.values(per).reduce((a, b) => a + (Number(b) || 0), 0);
+    updateBadge(total, this.settings.taskbar_badge ?? "count");
   }
 
   showEvent(id: number, ts: number) {

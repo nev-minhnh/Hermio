@@ -8,34 +8,129 @@
     { id: "mail", icon: "mail", label: t("Mail") },
     { id: "calendar", icon: "calendar", label: t("Calendar") },
   ] as const;
+
+  /** Hidden: only a thin line at the window's left edge; hovering it slides the rail out. */
+  const collapsed = $derived(!!store.settings.rail_collapsed);
+  let peek = $state(false);
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  function enter() {
+    clearTimeout(hideTimer);
+    if (collapsed) peek = true;
+  }
+  function leave() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => (peek = false), 280);
+  }
+  function go(route: "mail" | "calendar" | "settings") {
+    store.route = route;
+    peek = false;
+  }
+  function toggle() {
+    peek = false;
+    store.set("rail_collapsed", !collapsed);
+  }
 </script>
 
-<nav class="rail">
-  {#each items as it}
-    <button class="item" class:on={store.route === it.id} title={it.label} onclick={() => (store.route = it.id)}>
-      <Icon name={it.icon} size={22} />
-      <span>{it.label}</span>
-      {#if it.id === "mail" && store.counts.inbox > 0}
-        <i class="dot" transition:scale={{ duration: 180, start: 0.5 }}>{store.counts.inbox > 99 ? "99+" : store.counts.inbox}</i>
-      {/if}
+<div class="railwrap" class:collapsed class:peek>
+  {#if collapsed}
+    <!-- The thin handle: hover (or focus) brings the rail back for a moment. -->
+    <button class="edge" title={t("Show the navigation (Mail, Calendar, Settings)")} onmouseenter={enter} onmouseleave={leave} onfocus={enter} onclick={enter} aria-label={t("Show navigation")}>
+      <span></span>
     </button>
-  {/each}
-  <div class="spacer"></div>
-  <button class="item" class:on={store.route === "settings"} title={t("Settings")} onclick={() => (store.route = "settings")}>
-    <Icon name="settings" size={22} />
-    <span>{t("Settings")}</span>
-  </button>
-</nav>
+  {/if}
+  <nav class="rail" onmouseenter={enter} onmouseleave={leave}>
+    {#each items as it}
+      <button class="item" class:on={store.route === it.id} title={it.label} onclick={() => go(it.id)}>
+        <Icon name={it.icon} size={22} />
+        <span>{it.label}</span>
+        {#if it.id === "mail" && store.counts.inbox > 0}
+          <i class="dot" transition:scale={{ duration: 180, start: 0.5 }}>{store.counts.inbox > 99 ? "99+" : store.counts.inbox}</i>
+        {/if}
+      </button>
+    {/each}
+    <div class="spacer"></div>
+    <button class="item small" title={collapsed ? t("Keep the navigation open") : t("Hide the navigation (a line at the left edge brings it back)")} onclick={toggle}>
+      <Icon name={collapsed ? "chevronRight" : "chevronLeft"} size={18} />
+      <span>{collapsed ? t("Pin") : t("Hide")}</span>
+    </button>
+    <button class="item" class:on={store.route === "settings"} title={t("Settings")} onclick={() => go("settings")}>
+      <Icon name="settings" size={22} />
+      <span>{t("Settings")}</span>
+    </button>
+  </nav>
+</div>
 
 <style>
-  .rail {
-    width: 64px;
+  .railwrap {
+    position: relative;
     flex: none;
+    width: 64px;
+    transition: width 240ms var(--ease-out);
+    z-index: 30;
+  }
+  .railwrap.collapsed {
+    width: 0;
+  }
+  .rail {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 64px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
     padding: 4px 0 12px;
+    background: var(--bg-app);
+    transition:
+      transform 240ms var(--ease-out),
+      box-shadow 240ms var(--ease-out),
+      opacity 200ms var(--ease);
+  }
+  .collapsed .rail {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .collapsed.peek .rail {
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    border-radius: 0 var(--radius-l) var(--radius-l) 0;
+    box-shadow: var(--shadow-l);
+  }
+  /* The line that stands for the hidden rail. */
+  .edge {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    z-index: 1;
+  }
+  .edge span {
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    width: 3px;
+    height: 56px;
+    margin-top: -28px;
+    border-radius: 3px;
+    background: var(--border-strong);
+    transition: background var(--dur), height 200ms var(--ease-out), margin 200ms var(--ease-out);
+  }
+  .edge:hover span,
+  .edge:focus-visible span {
+    background: var(--accent);
+    height: 80px;
+    margin-top: -40px;
+  }
+  .item.small {
+    height: 44px;
+    color: var(--text-3);
   }
   .item {
     position: relative;

@@ -245,6 +245,7 @@ fn main() {
             commands::sync_log_open,
             commands::test_notification,
             commands::reminder_skip,
+            commands::set_unread_badge,
             commands::invite_info,
             commands::invite_respond,
             commands::notification_pending,

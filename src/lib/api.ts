@@ -333,6 +333,7 @@ export const api = {
   testNotification: () => invoke<void>("test_notification"),
   inviteInfo: (messageId: number) => invoke<InviteInfo | null>("invite_info", { messageId }),
   inviteRespond: (messageId: number, action: "add" | "accepted" | "tentative" | "declined" | "dismiss") => invoke<InviteResult>("invite_respond", { messageId, action }),
+  setUnreadBadge: (count: number, overlay: number[] | null, tray: number[] | null) => invoke<void>("set_unread_badge", { count, overlay, tray }),
   reminderSkip: (key: string) => invoke<void>("reminder_skip", { key }),
   notificationPending: () => invoke<{ message_id: number; account_id: number } | null>("notification_pending"),
   npuRedownload: (tag: string) => invoke<void>("npu_redownload", { tag }),

@@ -5,8 +5,9 @@
     max = 1000,
     vertical = false,
     invert = false,
+    quiet = false,
     onend,
-  }: { size: number; min?: number; max?: number; vertical?: boolean; invert?: boolean; onend?: () => void } = $props();
+  }: { size: number; min?: number; max?: number; vertical?: boolean; invert?: boolean; quiet?: boolean; onend?: () => void } = $props();
 
   let dragging = $state(false);
 
@@ -32,7 +33,7 @@
   }
 </script>
 
-<div class="splitter" class:vertical class:dragging onpointerdown={down} role="separator" aria-orientation={vertical ? "horizontal" : "vertical"}></div>
+<div class="splitter" class:vertical class:dragging class:quiet onpointerdown={down} role="separator" aria-orientation={vertical ? "horizontal" : "vertical"}></div>
 
 <style>
   .splitter {
@@ -58,6 +59,18 @@
     background: var(--accent);
     width: 2px;
     left: 3px;
+  }
+  /* Between panes that already have their own edges: no resting line, only a rounded handle
+     (inset from the ends) while hovering or dragging. */
+  .splitter.quiet::after {
+    top: 14px;
+    bottom: 14px;
+    border-radius: 2px;
+    background: transparent;
+  }
+  .splitter.quiet:hover::after,
+  .splitter.quiet.dragging::after {
+    background: color-mix(in srgb, var(--accent) 70%, transparent);
   }
   .splitter.vertical {
     width: auto;

@@ -1009,4 +1009,13 @@ export const vi: Record<string, string> = {
   "Marked {n} as read": "Đã đánh dấu {n} thư là đã đọc",
   "Marked {n} as unread": "Đã đánh dấu {n} thư là chưa đọc",
   "Flag removed": "Đã bỏ gắn cờ",
+  "Unread count on the taskbar icon": "Số thư chưa đọc trên biểu tượng taskbar",
+  "All unread mail in the inboxes of every signed-in mailbox. Also shown on the tray icon.": "Tổng thư chưa đọc trong Hộp thư đến của mọi hộp thư đã đăng nhập. Cũng hiện trên biểu tượng ở khay hệ thống.",
+  "Number": "Số",
+  "Dot": "Chấm",
+  "Show the navigation (Mail, Calendar, Settings)": "Hiện thanh điều hướng (Thư, Lịch, Cài đặt)",
+  "Show navigation": "Hiện thanh điều hướng",
+  "Keep the navigation open": "Giữ thanh điều hướng luôn mở",
+  "Hide the navigation (a line at the left edge brings it back)": "Ẩn thanh điều hướng (di chuột vào vạch ở mép trái để mở lại)",
+  "Pin": "Ghim",
 };
