@@ -3,6 +3,43 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.6.0
+
+**Notifications**
+- New layout: `Subject: …` with the time it was sent in the top-right corner, then
+  `From: <sender address>` and `To: <your address>` (other recipients are left out).
+  Built as Windows toast XML (WinRT) instead of plain text.
+
+**Calendar from email**
+- Opening an email that carries a calendar file (.ics) asks whether to add the event. For an
+  invitation it asks **Yes / Maybe / No**: the answer is sent to the organizer (iCalendar REPLY)
+  and Yes or Maybe also add the event to your calendar (the mailbox's own Google calendar when
+  there is one, otherwise the local calendar). Times use the invitation's time zone.
+- The prompt is asked once per email. The event bar in the email keeps the Yes / Maybe / No (or
+  Add to calendar) buttons and shows what you answered. Events already in the calendar
+  aren't added twice.
+- A popup confirms what happened, with a button to open the calendar on that event.
+
+**Calendar reminders**
+- 12 h, 6 h, 4 h, 2 h, 1 h, 30, 15 and 10 minutes before each timed event: a Windows reminder
+  (stays until dismissed) and a card in the window. Every reminder has **Skip remaining
+  reminders**, which silences the rest for that event. Steps missed while Hermio was closed
+  collapse into one reminder. *Open* jumps to the event; *Join* opens its Meet link.
+- Settings → Mail → *Remind me before calendar events* turns them off.
+
+**Feedback everywhere**
+- A thin progress bar runs along the top of the window whenever you wait more than 0.3 s on
+  anything (saving, moving, importing, backups…); downloads and installs keep their own
+  progress bars.
+- Every backend failure now shows a popup (once, even when the screen also reports it).
+- Confirmations were added where they were missing: spaces, groups, rules turned on/off,
+  removing mail from a group, web search settings, removing a mailbox, marking read/unread,
+  flags. Pressing Sync (or F5) reports when the mailboxes are up to date, or which failed.
+
+**Fixes**
+- The reading pane could collapse to a narrow strip since 0.5.2 (a style clash in the new
+  cross-fade); the multi-selection counter looked wrong for the same reason.
+
 ## 0.5.3
 
 - New-mail notifications now read **New email** with three lines:

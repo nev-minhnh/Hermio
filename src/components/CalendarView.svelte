@@ -2,7 +2,7 @@
   import { reduced } from "../lib/motion";
   import { pill } from "../lib/motion";
   import { t, locale } from "../lib/i18n.svelte";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import Icon from "../lib/Icon.svelte";
   import { api, type Calendar, type CalEvent } from "../lib/api";
   import { store } from "../lib/store.svelte";
@@ -87,6 +87,19 @@
     range.from;
     range.to;
     load();
+  });
+
+  // Asked to show an event (reminder, invitation): go to its day and open it.
+  $effect(() => {
+    const f = store.calFocus;
+    if (!f) return;
+    untrack(async () => {
+      cursor = startOfDay(new Date(f.ts * 1000));
+      await tick();
+      await load();
+      const e = events.find((x) => x.id === f.id);
+      if (e) editing = e;
+    });
   });
 
   onMount(() => {

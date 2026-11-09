@@ -77,7 +77,7 @@
       x: e.clientX,
       y: e.clientY,
       items: [
-        { icon: "sync", label: t("Sync now"), run: () => api.syncNow(a.id) },
+        { icon: "sync", label: t("Sync now"), run: () => store.syncNow(a.id) },
         { icon: "mail", label: t("Show all mail of this account"), run: () => store.open(`account:${a.id}`) },
         {
           icon: "plus",
@@ -108,6 +108,7 @@
     await api.setAccountSpace(a.id, id);
     await store.loadAccounts();
     await store.loadFolders();
+    store.success(id ? t("{email} moved to “{space}”", { email: a.email, space: store.spaces.find((s) => s.id === id)?.name ?? "" }) : t("{email} removed from its space", { email: a.email }));
   }
 
   function folderMenu(e: MouseEvent, f: Folder) {
@@ -125,7 +126,7 @@
             store.loadFolders();
           },
         },
-        { icon: "sync", label: t("Sync account"), run: () => api.syncNow(f.account_id) },
+        { icon: "sync", label: t("Sync account"), run: () => store.syncNow(f.account_id) },
         { icon: "sparkle", label: t("AI: summarize this folder"), run: () => { store.open(`folder:${f.id}`); store.ai("summarize"); } },
       ],
     };

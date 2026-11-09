@@ -1270,15 +1270,23 @@ pub fn notification_pending() -> Option<crate::notify::OpenRequest> {
 }
 #[tauri::command]
 pub fn test_notification(state: S) -> R<()> {
-    use tauri_plugin_notification::NotificationExt;
-    state
-        .app
-        .notification()
-        .builder()
-        .title("New email")
-        .body("From: Hermio\nTo: you\nSubject: Notifications are working — new mail will look like this")
-        .show()
-        .map_err(e)
+    crate::notify::test(&state);
+    Ok(())
+}
+/// "Skip remaining reminders" from the in-app reminder card.
+#[tauri::command]
+pub fn reminder_skip(state: S, key: String) -> R<()> {
+    crate::notify::skip_reminders(&state, &key);
+    Ok(())
+}
+#[tauri::command]
+pub async fn invite_info(state: S<'_>, message_id: i64) -> R<Option<crate::invites::InviteInfo>> {
+    crate::invites::info(&state, message_id).await.map_err(ea)
+}
+/// `action`: add · accepted · tentative · declined · dismiss.
+#[tauri::command]
+pub async fn invite_respond(state: S<'_>, message_id: i64, action: String) -> R<crate::invites::InviteResult> {
+    crate::invites::respond(&state, message_id, &action).await.map_err(ea)
 }
 #[tauri::command]
 pub fn sync_log_open(app: tauri::AppHandle, state: S) -> R<()> {

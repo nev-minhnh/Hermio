@@ -1,12 +1,20 @@
-//! New-mail notifications (Windows toasts), sent from the back end.
+//! Windows notifications (toasts): new mail and calendar reminders.
 //!
-//! They used to be raised by the web page when it heard the "new-mail" event, which loses them
-//! whenever the page isn't listening: while it is still loading at start-up (the first sync runs
-//! two seconds after launch), or while WebView2 throttles the hidden window in the tray. Now the
-//! sync itself shows them, once per mailbox and sync run.
+//! They are raised by the back end itself (not by the web page, which may be loading or
+//! throttled in the tray) and built as toast XML, which gives them the layout
+//!
+//! ```text
+//!  Subject: …                                    10:04 AM
+//!  From: …
+//!  To: …
+//! ```
+//!
+//! and buttons. Clicks come back through [`activated`].
 
+use crate::models::Event;
 use crate::state::AppState;
-use tauri_plugin_notification::NotificationExt;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
 
 /// One new message worth telling the user about.
 #[derive(Debug, Clone, Default)]
@@ -14,82 +22,28 @@ pub struct NewMail {
     pub id: i64,
     pub from_name: String,
     pub from_addr: String,
-    /// "Name <addr>, addr, …" as stored for the message.
-    pub to: String,
-    pub cc: String,
+    /// Received (Date header), Unix seconds.
+    pub date: i64,
     pub subject: String,
 }
 
 impl NewMail {
-    /// "Lan Phạm <lan@example.com>", or just the address.
+    /// The sender's address ("Name" only when there is no address).
     fn from_line(&self) -> String {
-        match (self.from_name.trim(), self.from_addr.trim()) {
-            ("", a) => a.to_string(),
-            (n, "") => n.to_string(),
-            (n, a) if n.eq_ignore_ascii_case(a) => a.to_string(),
-            (n, a) => format!("{n} <{a}>"),
-        }
+        if self.from_addr.trim().is_empty() { self.from_name.trim().to_string() } else { self.from_addr.trim().to_string() }
     }
     fn short_from(&self) -> String {
         if self.from_name.trim().is_empty() { self.from_addr.clone() } else { self.from_name.trim().to_string() }
     }
 }
 
-/// Recipients for one line: "me@x.com, Bình +2". `own` is shown when the list is empty
-/// (Bcc / undisclosed recipients) and listed first when the user is among them.
-fn to_line(to: &str, cc: &str, own: &str) -> String {
-    let all: Vec<&str> = to.split(", ").chain(cc.split(", ")).map(str::trim).filter(|s| !s.is_empty()).collect();
-    if all.is_empty() {
-        return own.to_string();
-    }
-    let addr = |s: &str| s.rsplit_once('<').map(|(_, a)| a.trim_end_matches('>').trim().to_string()).unwrap_or_else(|| s.to_string());
-    let label = |s: &str| match s.rsplit_once('<') {
-        Some((n, _)) if !n.trim().is_empty() => n.trim().to_string(),
-        _ => addr(s),
-    };
-    let mut out: Vec<String> = vec![];
-    if let Some(me) = all.iter().find(|s| addr(s).eq_ignore_ascii_case(own)) {
-        out.push(addr(me));
-    }
-    for s in &all {
-        if out.len() >= 2 {
-            break;
-        }
-        if !addr(s).eq_ignore_ascii_case(own) {
-            out.push(label(s));
-        }
-    }
-    let rest = all.len().saturating_sub(out.len());
-    if rest > 0 {
-        format!("{} +{rest}", out.join(", "))
-    } else {
-        out.join(", ")
-    }
-}
-
-/// Windows shows at most four lines of body text; long From/To lines are cut so they keep to
-/// one line each and the subject stays visible.
-fn clip(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", s.chars().take(max - 1).collect::<String>().trim_end())
-    }
-}
-
-/// The toast text: "From: …", "To: …", "Subject: …" on their own lines.
-fn body_for(m: &NewMail, account: &str) -> String {
-    let subject = if m.subject.trim().is_empty() { "(No subject)" } else { m.subject.trim() };
-    format!("From: {}\nTo: {}\nSubject: {}", clip(&m.from_line(), 46), clip(&to_line(&m.to, &m.cc, account), 48), subject)
-}
-
 /// Mail sorted into a group that is hidden from the inbox is only announced when the user
-/// asked for it (Settings → Mail → "Notify for mail sorted into groups").
+/// asked for it (Settings → Mail → "Also notify for mail sorted into groups").
 pub fn include_grouped(state: &AppState) -> bool {
     setting_bool(state, "notify_groups", false)
 }
 
-fn setting_bool(state: &AppState, key: &str, default: bool) -> bool {
+pub fn setting_bool(state: &AppState, key: &str, default: bool) -> bool {
     state
         .db
         .get_setting(key)
@@ -103,30 +57,59 @@ fn setting_bool(state: &AppState, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+/// The interface language (toasts are built here, not in the page).
+fn vi(state: &AppState) -> bool {
+    state.db.get_setting("lang").ok().flatten().map(|v| v.trim_matches('"').starts_with("vi")).unwrap_or(false)
+}
+
+/// Escape text for toast XML.
+pub fn esc(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
+}
+
+/// Windows shows a limited width; keep each line to one line.
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(max - 1).collect::<String>().trim_end())
+    }
+}
+
+/// "10:04 AM" today, "08/11 10:04 AM" on another day.
+fn when(ts: i64) -> String {
+    use chrono::{Local, TimeZone};
+    let Some(t) = Local.timestamp_opt(ts, 0).single() else { return String::new() };
+    let time = t.format("%-I:%M %p").to_string();
+    if t.date_naive() == Local::now().date_naive() { time } else { format!("{} {time}", t.format("%d/%m")) }
+}
+
+/// The toast XML for new mail (layout above). `launch` is what a click on it reports.
+fn mail_xml(subject: &str, time: &str, from: &str, to: &str, launch: &str) -> String {
+    format!(
+        r#"<toast launch="{launch}" activationType="foreground"><visual><binding template="ToastGeneric"><group><subgroup hint-weight="78"><text hint-style="base" hint-maxLines="2">{subject}</text></subgroup><subgroup hint-weight="22" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{time}</text></subgroup></group><group><subgroup><text hint-style="body" hint-maxLines="1">{from}</text><text hint-style="body" hint-maxLines="1">{to}</text></subgroup></group></binding></visual><audio src="ms-winsoundevent:Notification.Mail"/></toast>"#,
+        launch = esc(launch),
+        subject = esc(subject),
+        time = esc(time),
+        from = esc(from),
+        to = esc(to),
+    )
+}
+
 /// Show the toasts for what one sync run of one mailbox brought in: one toast per message for
 /// a few messages, a single summary for a burst (Windows queues and drops floods of toasts).
+/// "To" is always the mailbox's own address.
 pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMail]) {
     if items.is_empty() || !setting_bool(state, "notifications", true) {
         return;
     }
-    // The message id travels with the toast, so a click can open that email.
-    let show_for = |message: i64, title: &str, body: &str| {
-        let b = state
-            .app
-            .notification()
-            .builder()
-            .id(i32::try_from(message).unwrap_or(0))
-            .title(title)
-            .body(body)
-            .extra("message_id", message)
-            .extra("account_id", account_id);
-        if let Err(e) = b.show() {
-            crate::sync::log_plain(state, "warn", format!("Couldn't show a notification: {e}"));
-        }
-    };
+    let subj = |m: &NewMail| if m.subject.trim().is_empty() { "(No subject)".to_string() } else { m.subject.trim().to_string() };
+    let to = format!("To: {account}");
     if items.len() <= 3 {
         for m in items {
-            show_for(m.id, "New email", &body_for(m, account));
+            let subject = format!("Subject: {}", subj(m));
+            let from = format!("From: {}", clip(&m.from_line(), 60));
+            show(state, &mail_xml(&subject, &when(m.date), &from, &to, &format!("msg:{}:{account_id}", m.id)), &subject, &format!("{from}\n{to}"));
         }
     } else {
         let mut senders: Vec<String> = vec![];
@@ -136,38 +119,80 @@ pub fn new_mail(state: &AppState, account_id: i64, account: &str, items: &[NewMa
                 senders.push(f);
             }
         }
-        let from = if senders.len() > 3 { format!("{} and {} more", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
-        // Newest first (highest id); a click opens it, in its inbox.
-        let newest = items.iter().max_by_key(|m| m.id).unwrap();
-        let subject = if newest.subject.trim().is_empty() { "(No subject)" } else { newest.subject.trim() };
-        let body = format!("From: {}\nTo: {account}\nSubject: {subject} (+{} more)", clip(&from, 46), items.len() - 1);
-        show_for(newest.id, &format!("{} new emails", items.len()), &body);
+        let names = if senders.len() > 3 { format!("{} +{}", senders[..3].join(", "), senders.len() - 3) } else { senders.join(", ") };
+        // A click opens the newest of them, in its inbox.
+        let newest = items.iter().max_by_key(|m| (m.date, m.id)).unwrap();
+        let subject = format!("Subject: {} (+{} more)", subj(newest), items.len() - 1);
+        let from = format!("From: {}", clip(&names, 60));
+        show(state, &mail_xml(&subject, &when(newest.date), &from, &to, &format!("msg:{}:{account_id}", newest.id)), &subject, &format!("{from}\n{to}"));
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// A sample new-mail toast (Settings → "Send a test notification").
+pub fn test(state: &AppState) {
+    let subject = "Subject: Hermio notification test";
+    let to = "To: you@example.com";
+    let from = "From: hermio@localhost";
+    show(state, &mail_xml(subject, &when(chrono::Utc::now().timestamp()), from, to, "test"), subject, &format!("{from}\n{to}"));
+}
 
-    #[test]
-    fn toast_lines() {
-        let m = NewMail {
-            id: 1,
-            from_name: "Lan Phạm".into(),
-            from_addr: "lan@uni.edu".into(),
-            to: "Team <team@uni.edu>, me@x.com, Bình <binh@x.com>".into(),
-            cc: "An <an@x.com>".into(),
-            subject: "Họp nhóm".into(),
-        };
-        assert_eq!(body_for(&m, "me@x.com"), "From: Lan Phạm <lan@uni.edu>\nTo: me@x.com, Team +2\nSubject: Họp nhóm");
-        let bcc = NewMail { from_addr: "news@shop.vn".into(), ..Default::default() };
-        assert_eq!(body_for(&bcc, "me@x.com"), "From: news@shop.vn\nTo: me@x.com\nSubject: (No subject)");
-        assert_eq!(to_line("a@x.com", "", "me@x.com"), "a@x.com");
-        assert_eq!(clip("abcdef", 4), "abc…");
+/// "2 h", "1 h 30 min", "15 min" (or Vietnamese).
+pub fn lead_text(secs: i64, vi: bool) -> String {
+    let mins = ((secs + 30) / 60).max(1);
+    let (h, m) = (mins / 60, mins % 60);
+    let (hu, mu) = if vi { ("giờ", "phút") } else { ("h", "min") };
+    match (h, m) {
+        (0, m) => format!("{m} {mu}"),
+        (h, 0) => format!("{h} {hu}"),
+        (h, m) => format!("{h} {hu} {m} {mu}"),
     }
 }
 
-/// What a click on a toast should open.
+/// A calendar reminder: title and "in 2 h" on top, the time and place below, and the buttons
+/// Skip remaining reminders / Open / Dismiss.
+pub fn reminder(state: &AppState, e: &Event, left: i64, key: &str, last: bool) {
+    use chrono::{Local, TimeZone};
+    let vi = vi(state);
+    let fmt = |ts: i64| Local.timestamp_opt(ts, 0).single().map(|t| t.format("%-I:%M %p").to_string()).unwrap_or_default();
+    let day = Local.timestamp_opt(e.start_ts, 0).single().map(|t| {
+        if t.date_naive() == Local::now().date_naive() { String::new() } else { format!("{} · ", t.format("%a %d/%m")) }
+    });
+    let span = format!("{}{} – {}", day.unwrap_or_default(), fmt(e.start_ts), fmt(e.end_ts));
+    let place = if !e.location.trim().is_empty() { e.location.trim().to_string() } else if !e.meet_link.is_empty() { "Google Meet".into() } else { String::new() };
+    let soon = if vi { format!("còn {}", lead_text(left, true)) } else { format!("in {}", lead_text(left, false)) };
+    let title = if e.title.trim().is_empty() { if vi { "(Không tiêu đề)" } else { "(No title)" }.to_string() } else { e.title.trim().to_string() };
+    let (skip, open, dismiss) = if vi { ("Bỏ qua các lần nhắc sau", "Mở", "Đóng") } else { ("Skip remaining reminders", "Open", "Dismiss") };
+    let skip_btn = if last { String::new() } else { format!(r#"<action content="{}" arguments="ev:skip:{}"/>"#, esc(skip), esc(key)) };
+    let xml = format!(
+        r#"<toast scenario="reminder" launch="ev:open:{id}" activationType="foreground"><visual><binding template="ToastGeneric"><group><subgroup hint-weight="72"><text hint-style="base" hint-maxLines="2">{title}</text></subgroup><subgroup hint-weight="28" hint-textStacking="top"><text hint-style="captionSubtle" hint-align="right">{soon}</text></subgroup></group><group><subgroup><text hint-style="body" hint-maxLines="1">{span}</text><text hint-style="captionSubtle" hint-maxLines="1">{place}</text></subgroup></group></binding></visual><actions>{skip_btn}<action content="{open}" arguments="ev:open:{id}"/><action content="{dismiss}" arguments="dismiss" activationType="system"/></actions><audio src="ms-winsoundevent:Notification.Reminder"/></toast>"#,
+        id = e.id,
+        title = esc(&title),
+        soon = esc(&soon),
+        span = esc(&span),
+        place = esc(&place),
+        open = esc(open),
+        dismiss = esc(dismiss),
+    );
+    show(state, &xml, &format!("{title} · {soon}"), &format!("{span}\n{place}"));
+}
+
+/// A short confirmation toast (title + one line).
+pub fn simple(state: &AppState, title: &str, line: &str) {
+    let xml = format!(
+        r#"<toast launch="none"><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual></toast>"#,
+        esc(title),
+        esc(line)
+    );
+    show(state, &xml, title, line);
+}
+
+fn show(state: &AppState, xml: &str, plain_title: &str, plain_body: &str) {
+    crate::toast::show(&state.app, xml.to_string(), plain_title.to_string(), plain_body.to_string());
+}
+
+// ---------------- clicks ----------------
+
+/// What a click on a new-mail toast should open.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct OpenRequest {
     pub message_id: i64,
@@ -176,19 +201,13 @@ pub struct OpenRequest {
 
 static PENDING: std::sync::Mutex<Option<OpenRequest>> = std::sync::Mutex::new(None);
 
-/// Called when a toast is clicked: bring the window back and ask the page to open the email.
-/// The request is also kept until the page picks it up, in case the page is still loading.
-pub fn clicked(app: &tauri::AppHandle, p: &tauri_plugin_notification::ActionPerformed) {
-    use tauri::{Emitter, Manager};
-    if p.action_id() != "tap" {
-        return;
-    }
-    let num = |k: &str| p.notification().and_then(|n| n.extra().get(k)).and_then(|v| v.as_i64());
-    let req = OpenRequest {
-        message_id: num("message_id").or_else(|| p.notification().map(|n| n.id() as i64)).unwrap_or(0),
-        account_id: num("account_id").unwrap_or(0),
-    };
-    *PENDING.lock().unwrap() = Some(req.clone());
+/// The click the page hasn't handled yet (taken once).
+pub fn take_pending() -> Option<OpenRequest> {
+    PENDING.lock().unwrap().take()
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn bring_up(app: &tauri::AppHandle, then: impl FnOnce(&tauri::AppHandle) + Send + 'static) {
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = app2.get_webview_window("main") {
@@ -196,13 +215,56 @@ pub fn clicked(app: &tauri::AppHandle, p: &tauri_plugin_notification::ActionPerf
             let _ = w.show();
             let _ = w.set_focus();
         }
-        let _ = app2.emit("open-message", &req);
+        then(&app2);
     });
 }
 
-/// The click the page hasn't handled yet (taken once).
-pub fn take_pending() -> Option<OpenRequest> {
-    PENDING.lock().unwrap().take()
+/// A toast (or one of its buttons) was clicked. `args`:
+/// `msg:<message>:<account>` · `ev:open:<event>` · `ev:skip:<reminder key>` · `dismiss`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn activated(app: &tauri::AppHandle, args: &str) {
+    let parts: Vec<&str> = args.splitn(3, ':').collect();
+    match parts.as_slice() {
+        ["msg", id, acc] => {
+            let req = OpenRequest { message_id: id.parse().unwrap_or(0), account_id: acc.parse().unwrap_or(0) };
+            *PENDING.lock().unwrap() = Some(req.clone());
+            bring_up(app, move |a| {
+                let _ = a.emit("open-message", &req);
+            });
+        }
+        ["ev", "open", id] => {
+            let id: i64 = id.parse().unwrap_or(0);
+            let start = app.try_state::<Arc<AppState>>().and_then(|s| s.db.event(id).ok()).map(|e| e.start_ts).unwrap_or(0);
+            bring_up(app, move |a| {
+                let _ = a.emit("open-event", serde_json::json!({ "id": id, "start_ts": start }));
+            });
+        }
+        ["ev", "skip", key] => {
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
+                skip_reminders(&state, key);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// "Skip remaining reminders": no more reminders for this event (this occurrence).
+pub fn skip_reminders(state: &AppState, key: &str) {
+    let start = key.rsplit_once('@').and_then(|(_, s)| s.parse().ok()).unwrap_or(0);
+    let ok = state.db.set_reminder(key, start, None, Some(true));
+    let vi = vi(state);
+    match ok {
+        Ok(()) => {
+            state.emit("reminder-skipped", &serde_json::json!({ "key": key }));
+            let (t, l) = if vi {
+                ("Đã tắt nhắc lịch", "Bạn sẽ không nhận thêm lời nhắc nào cho sự kiện này.")
+            } else {
+                ("Reminders skipped", "You won't get more reminders for this event.")
+            };
+            simple(state, t, l);
+        }
+        Err(e) => simple(state, if vi { "Không tắt được lời nhắc" } else { "Couldn't skip the reminders" }, &format!("{e:#}")),
+    }
 }
 
 /// Windows only shows toasts from an app whose AppUserModelID is registered. The installer's
@@ -229,3 +291,25 @@ pub fn register_app_id(app_id: &str, data_dir: &std::path::Path) {
 
 #[cfg(not(windows))]
 pub fn register_app_id(_app_id: &str, _data_dir: &std::path::Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mail_toast_xml() {
+        let x = mail_xml("Subject: A & B", "10:04 AM", "From: a@x.com", "To: me@x.com", "msg:1:2");
+        assert!(x.contains("Subject: A &amp; B"));
+        assert!(x.contains(r#"hint-align="right">10:04 AM<"#));
+        assert!(x.contains(r#"launch="msg:1:2""#));
+        assert!(x.find("From:").unwrap() < x.find("To:").unwrap());
+        assert_eq!(clip("abcdef", 4), "abc…");
+    }
+
+    #[test]
+    fn leads() {
+        assert_eq!(lead_text(7200, false), "2 h");
+        assert_eq!(lead_text(5400, false), "1 h 30 min");
+        assert_eq!(lead_text(600, true), "10 phút");
+    }
+}

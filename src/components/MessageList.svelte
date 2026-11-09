@@ -323,6 +323,7 @@
                 await api.removeFromGroup(ids, Number(store.view.slice(6)));
                 store.messages = store.messages.filter((x) => !ids.includes(x.id));
                 await store.reloadAll();
+                store.success(t("{n} email(s) removed from the group", { n: ids.length }));
               },
             }] as MenuItem[])
           : []),

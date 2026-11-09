@@ -100,18 +100,21 @@
     if (!name?.trim()) return;
     await api.saveSpace({ name: name.trim(), color: accents[store.spaces.length % accents.length] });
     await store.loadSpaces();
+    store.success(t("Space “{name}” created", { name: name.trim() }));
   }
   async function renameSpace(id: number, old: string, color: string) {
     const name = prompt(t("Rename space"), old);
     if (!name?.trim()) return;
     await api.saveSpace({ id, name: name.trim(), color });
     await store.loadSpaces();
+    store.success(t("Space renamed"));
   }
   async function removeSpace(id: number) {
     if (!confirm(t("Delete this space? Its accounts are not removed."))) return;
     await api.deleteSpace(id);
     await store.loadSpaces();
     await store.loadAccounts();
+    store.success(t("Space deleted"));
     if (store.settings.space === id) store.setSpace(0);
   }
   async function accountSpace(accountId: number, v: string) {
@@ -532,6 +535,10 @@
                 <span>{t("Also notify for mail sorted into groups")}<br /><span class="muted small">{t("Off: mail that rules or AI put into a group hidden from the inbox arrives quietly.")}</span></span>
               </button>
             {/if}
+            <button class="toggle rem" onclick={() => store.set("reminders", !store.settings.reminders)}>
+              <span class="switch" class:on={store.settings.reminders}></span>
+              <span>{t("Remind me before calendar events")}<br /><span class="muted small">{t("12 h, 6 h, 4 h, 2 h, 1 h, 30, 15 and 10 minutes before. Each reminder can skip the rest.")}</span></span>
+            </button>
           </div>
           <label class="field">
             <span>{t("Undo send window: {n} seconds", { n: store.settings.send_delay })}</span>
@@ -938,6 +945,10 @@
     color: var(--text-accent);
     text-decoration: underline;
     font: inherit;
+  }
+  .notif .rem {
+    margin-top: 8px;
+    align-items: flex-start;
   }
   .notif .sub {
     margin: 6px 0 0 52px;

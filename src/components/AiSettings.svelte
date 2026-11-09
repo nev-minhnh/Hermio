@@ -51,6 +51,7 @@
     await api.setWebConfig(webEngine, searx.trim(), braveKey.trim() || null);
     if (braveKey.trim()) hasBrave = true;
     braveKey = "";
+    store.success(t("Web search settings saved"));
   }
   async function testWeb() {
     webBusy = true;

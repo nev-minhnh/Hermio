@@ -1,6 +1,6 @@
 [package]
 name = "hermio"
-version = "0.5.3"
+version = "0.6.0"
 description = "Hermio – Automate your inbox flow. Email client for Windows 11 (IMAP, POP3, Google Workspace, calendar, on-device AI)"
 authors = ["nev-minhnh"]
 license = "MIT OR Apache-2.0"
@@ -57,4 +57,5 @@ panic = "unwind"  # pdf-extract may panic on odd PDFs; we catch it
 strip = true
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Foundation", "Data_Xml_Dom", "UI_Notifications"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Power", "Win32_System_SystemInformation", "Win32_Security_Cryptography", "Win32_System_Memory"] }

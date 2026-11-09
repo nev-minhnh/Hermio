@@ -91,6 +91,7 @@
   async function toggle(r: Rule) {
     await api.saveRule({ ...r, enabled: !r.enabled });
     await load();
+    store.success(r.enabled ? t("Rule “{name}” turned off", { name: r.name }) : t("Rule “{name}” turned on", { name: r.name }));
   }
 
   async function removeRule(r: Rule) {
@@ -117,6 +118,7 @@
     groupEdit = null;
     await load();
     await store.reloadAll();
+    store.success(t("Group saved"));
   }
 
   async function removeGroup(g: Group) {
@@ -124,6 +126,7 @@
     await api.deleteGroup(g.id);
     await load();
     await store.reloadAll();
+    store.success(t("Group “{name}” deleted", { name: g.name }));
     if (store.view === `group:${g.id}`) store.open("unified:inbox");
   }
 

@@ -68,7 +68,7 @@
   <div class="head">
     <b>{t("Sync status")}</b>
     <span class="grow"></span>
-    <button class="btn subtle" onclick={() => api.syncNow(null)}><Icon name="sync" size={15} class={Object.values(store.syncing).some(Boolean) ? "spin" : ""} />{t("Sync all")}</button>
+    <button class="btn subtle" onclick={() => store.syncNow(null)}><Icon name="sync" size={15} class={Object.values(store.syncing).some(Boolean) ? "spin" : ""} />{t("Sync all")}</button>
     <button class="icon-btn" title={t("Close")} onclick={onclose}><Icon name="close" size={15} /></button>
   </div>
 
@@ -87,7 +87,7 @@
             <div class="small muted">{a.enabled ? t("Synced {when}", { when: ago(a.last_sync) }) : t("Paused")}</div>
           {/if}
         </div>
-        <button class="icon-btn" title={t("Sync this mailbox")} onclick={() => api.syncNow(a.id)} disabled={!!store.syncing[a.id] || !a.enabled}>
+        <button class="icon-btn" title={t("Sync this mailbox")} onclick={() => store.syncNow(a.id)} disabled={!!store.syncing[a.id] || !a.enabled}>
           <Icon name="sync" size={14} class={store.syncing[a.id] ? "spin" : ""} />
         </button>
       </div>

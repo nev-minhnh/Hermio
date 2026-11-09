@@ -10,10 +10,32 @@ export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in
 
 let mock: Promise<typeof import("./mock")> | null = null;
 
-export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+/** Observers of every backend call (progress bar, failure popups); set by the app. */
+export interface InvokeHooks {
+  start(cmd: string): number;
+  end(token: number, cmd: string, error?: unknown): void;
+}
+let hooks: InvokeHooks | null = null;
+export function setInvokeHooks(h: InvokeHooks) {
+  hooks = h;
+}
+
+async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (inTauri) return tauriInvoke<T>(cmd, args);
   mock ??= import("./mock");
   return (await mock).mockInvoke(cmd, args ?? {}) as T;
+}
+
+export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const token = hooks?.start(cmd) ?? 0;
+  try {
+    const r = await call<T>(cmd, args);
+    hooks?.end(token, cmd);
+    return r;
+  } catch (e) {
+    hooks?.end(token, cmd, e);
+    throw e;
+  }
 }
 
 export async function listen<T>(event: string, cb: (payload: T) => void): Promise<() => void> {

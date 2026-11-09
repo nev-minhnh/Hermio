@@ -1,6 +1,7 @@
 import { t } from "./i18n.svelte";
+import { setInvokeHooks } from "./tauri";
 import type { NpuStatus, NpuInfo, NpuProgress, NpuAvailable, NpuDirs } from "./api";
-import { api, type Account, type Folder, type Message, type Signature, type Space, type Group, type Outgoing, type OutboxItem, type Suggestion } from "./api";
+import { api, type Account, type Folder, type Message, type Signature, type Space, type Group, type Outgoing, type OutboxItem, type Suggestion, type Reminder } from "./api";
 import { i18n, syncLang, type Lang } from "./i18n.svelte";
 
 export interface Settings {
@@ -17,6 +18,8 @@ export interface Settings {
   notifications: boolean;
   /** Also notify for new mail that goes straight into a group hidden from the inbox. */
   notify_groups: boolean;
+  /** Calendar reminders (12 h … 10 min before). */
+  reminders: boolean;
   confirm_delete: boolean;
   search_mode: "subject" | "content" | "people";
   folder_pane_width: number;
@@ -54,6 +57,7 @@ export const defaults: Settings = {
   remote_images: "ask",
   notifications: true,
   notify_groups: false,
+  reminders: true,
   confirm_delete: false,
   search_mode: "content",
   folder_pane_width: 248,
@@ -127,6 +131,13 @@ class Store {
   filter = $state("");
   search = $state("");
   messages = $state<Message[]>([]);
+  /** Calendar: jump to this day and open this event (from a reminder, an invitation…). */
+  calFocus = $state<{ id: number; ts: number; seq: number } | null>(null);
+  private focusSeq = 0;
+  /** Calendar reminders shown as cards in the window. */
+  reminders = $state<Reminder[]>([]);
+  /** Operations in flight that the user is waiting for (drives the progress bar). */
+  busy = $state(0);
   /** Bumped to make the list scroll the selected email into view. */
   reveal = $state(0);
   hasMore = $state(true);
@@ -516,6 +527,44 @@ class Store {
     this.reveal++;
   }
 
+  // ---------- sync started by the user: report how it went ----------
+  private manualSync = new Map<number, string>();
+  private manualAll = false;
+  private manualFailed: string[] = [];
+  async syncNow(accountId: number | null) {
+    const ids = accountId === null ? this.accounts.filter((a) => a.enabled).map((a) => a.id) : [accountId];
+    if (!ids.length) return this.info(t("No mailbox to sync"));
+    for (const id of ids) this.manualSync.set(id, this.accountById(id)?.email ?? "");
+    this.manualAll = accountId === null && ids.length > 1;
+    this.manualFailed = [];
+    try {
+      await api.syncNow(accountId);
+    } catch (e) {
+      this.manualSync.clear();
+      this.error(t("Sync failed: {err}", { err: String(e) }));
+    }
+  }
+  /** Called when a mailbox finished syncing. */
+  syncFinished(accountId: number, error?: string) {
+    const email = this.manualSync.get(accountId);
+    if (email === undefined) return;
+    this.manualSync.delete(accountId);
+    if (error) this.manualFailed.push(email);
+    if (!this.manualAll) {
+      if (error) this.error(t("Sync of {email} failed: {err}", { email, err: error }));
+      else this.success(t("{email} is up to date", { email }));
+    } else if (!this.manualSync.size) {
+      if (this.manualFailed.length) this.error(t("Sync failed for {list}. Open the sync status for details.", { list: this.manualFailed.join(", ") }));
+      else this.success(t("All mailboxes are up to date"));
+      this.manualAll = false;
+    }
+  }
+
+  showEvent(id: number, ts: number) {
+    this.route = "calendar";
+    this.calFocus = { id, ts, seq: ++this.focusSeq };
+  }
+
   /** From the suggestion popup: show the inbox with the suggestions list expanded. */
   reviewSuggestions() {
     this.suggestPopup = 0;
@@ -545,17 +594,30 @@ class Store {
     for (const m of this.messages) if (set.has(m.id)) f(m);
   }
 
-  async markSeen(ids: number[], seen: boolean) {
+  /** `announce`: confirm with a popup (user actions; not the automatic mark-as-read). */
+  async markSeen(ids: number[], seen: boolean, announce = true) {
     if (!ids.length) return;
     this.patch(ids, (m) => (m.seen = seen));
-    await api.setSeen(ids, seen).catch((e) => this.error(String(e)));
+    try {
+      await api.setSeen(ids, seen);
+      if (announce) this.info(seen ? t("Marked {n} as read", { n: ids.length }) : t("Marked {n} as unread", { n: ids.length }));
+    } catch (e) {
+      this.patch(ids, (m) => (m.seen = !seen));
+      this.error(String(e));
+    }
   }
   async toggleFlag(ids: number[]) {
     if (!ids.length) return;
     const msgs = this.messages.filter((m) => ids.includes(m.id));
     const on = !msgs.every((m) => m.flagged);
     this.patch(ids, (m) => (m.flagged = on));
-    await api.setFlagged(ids, on).catch((e) => this.error(String(e)));
+    try {
+      await api.setFlagged(ids, on);
+      this.info(on ? t("Flagged") : t("Flag removed"));
+    } catch (e) {
+      this.patch(ids, (m) => (m.flagged = !on));
+      this.error(String(e));
+    }
   }
 
   /** Remove rows from the list and move the selection to the next message. */
@@ -620,7 +682,7 @@ class Store {
 
   startCompose(mode: ComposeMode, source?: Message, to?: string[], aiText?: string) {
     this.route = "mail";
-    if (source && !source.seen && mode !== "draft") this.markSeen([source.id], true);
+    if (source && !source.seen && mode !== "draft") this.markSeen([source.id], true, false);
     this.compose = { key: ++this.composeSeq, mode, source, to, aiText };
   }
   restoreCompose(message: Outgoing) {
@@ -663,6 +725,9 @@ class Store {
 
   // ---------- toasts ----------
   toast(kind: Toast["kind"], text: string, action?: Toast["action"]) {
+    // The same message twice (e.g. a failure reported by both the action and the app): show it once.
+    const same = this.toasts.find((x) => x.kind === kind && (x.text === text || (kind === "error" && (x.text.includes(text) || text.includes(x.text)))));
+    if (same) return;
     const id = ++this.toastSeq;
     this.toasts = [...this.toasts, { id, kind, text, action }];
     setTimeout(() => this.dismiss(id), kind === "error" ? 8000 : 3500);
@@ -676,3 +741,33 @@ class Store {
 }
 
 export const store = new Store();
+
+// ---------- every backend call: progress bar + failure popups ----------
+// Calls with their own progress/streaming UI, or that run in the background, stay silent.
+const QUIET = /^(ai_(run|chat|chats|suggestions|suggest_queue|providers|skills|models)$|npu_(available|info|status|catalog|dirs|pull|install|cancel_pull)$|sync_log|notification_pending|invite_info|get_message|list_messages|list_folders|list_events|list_calendars|unread|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|set_setting|get_autostart|web_config|google_config|data_dir|guess_settings|discover_account)/;
+// Failures of these are reported where they happen (inline), or are background reads.
+const NO_POPUP = /^(list_|get_|ai_(run|test|chat|chats|suggestions|suggest_queue|providers|skills|models|read_file|read_bytes|cancel)$|npu_|sync_log|notification_|invite_info|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|unread|web_test|test_account|guess_settings|discover_account|google_config|web_config|data_dir)/;
+let seq = 0;
+const timers = new Map<number, ReturnType<typeof setTimeout> | "shown">();
+setInvokeHooks({
+  start(cmd) {
+    const id = ++seq;
+    if (!QUIET.test(cmd)) {
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.set(id, "shown");
+          store.busy++;
+        }, 300),
+      );
+    }
+    return id;
+  },
+  end(id, cmd, error) {
+    const tm = timers.get(id);
+    if (tm === "shown") store.busy = Math.max(0, store.busy - 1);
+    else if (tm) clearTimeout(tm);
+    timers.delete(id);
+    if (error !== undefined && !NO_POPUP.test(cmd)) store.error(String(error));
+  },
+});

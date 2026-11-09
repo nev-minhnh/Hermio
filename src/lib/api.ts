@@ -63,6 +63,13 @@ export interface NpuInfo {
   cpu: string; arch: string; engine: "flm" | "ovms" | ""; platform: string; supported: boolean; ram_gb: number; note: string;
 }
 export interface NpuDirs { found: string[]; foreign: string[]; runtime: string; runtime_default: string; runtime_size: number; models: string; models_default: string; models_size: number }
+export interface InviteInfo {
+  method: string; title: string; location: string; start_ts: number; end_ts: number; all_day: boolean; recurring: boolean;
+  organizer: string; organizer_name: string; state: "" | "added" | "accepted" | "tentative" | "declined" | "dismissed";
+  in_calendar: boolean; can_reply: boolean; calendar: string;
+}
+export interface InviteResult { event_id: number; added: boolean; already: boolean; replied: boolean; title: string; start_ts: number; all_day: boolean; calendar: string }
+export interface Reminder { key: string; event_id: number; title: string; location: string; meet_link: string; start_ts: number; end_ts: number; left: number; last: boolean; color: string }
 export interface SyncLogLine { ts: number; account_id: number; account: string; level: "info" | "ok" | "warn" | "error"; message: string }
 export interface DriverOutcome { method: "intel-installer" | "windows-update" | "manual"; ok: boolean; message: string; reboot: boolean; url: string }
 export interface NpuAvailable { models: RuntimeModel[]; ram_gb: number; version: string; npu: NpuInfo | null; collection: string; newer: string[] }
@@ -324,6 +331,9 @@ export const api = {
   syncLogClear: () => invoke<void>("sync_log_clear"),
   syncLogOpen: () => invoke<void>("sync_log_open"),
   testNotification: () => invoke<void>("test_notification"),
+  inviteInfo: (messageId: number) => invoke<InviteInfo | null>("invite_info", { messageId }),
+  inviteRespond: (messageId: number, action: "add" | "accepted" | "tentative" | "declined" | "dismiss") => invoke<InviteResult>("invite_respond", { messageId, action }),
+  reminderSkip: (key: string) => invoke<void>("reminder_skip", { key }),
   notificationPending: () => invoke<{ message_id: number; account_id: number } | null>("notification_pending"),
   npuRedownload: (tag: string) => invoke<void>("npu_redownload", { tag }),
   folders: () => invoke<Folder[]>("list_folders"),

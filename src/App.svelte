@@ -2,6 +2,7 @@
   import type { NpuProgress } from "./lib/api";
   import { t } from "./lib/i18n.svelte";
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { listen } from "./lib/tauri";
   import { store } from "./lib/store.svelte";
   import { api } from "./lib/api";
@@ -12,6 +13,7 @@
   import CalendarView from "./components/CalendarView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import Toasts from "./components/Toasts.svelte";
+  import ReminderStack from "./components/ReminderStack.svelte";
   import Welcome from "./components/Welcome.svelte";
   import SendQueue from "./components/SendQueue.svelte";
   import { showWindow } from "./lib/tauri";
@@ -47,6 +49,7 @@
         await listen<{ account_id: number; syncing: boolean; error?: string }>("sync-state", (p) => {
           store.syncing[p.account_id] = p.syncing;
           if (!p.syncing) {
+            store.syncFinished(p.account_id, p.error);
             const acc = store.accounts.find((x) => x.id === p.account_id);
             if (acc && !p.error) acc.last_sync = Math.floor(Date.now() / 1000);
             if (p.error) store.errors[p.account_id] = p.error;
@@ -71,6 +74,7 @@
       );
       unsubs.push(await listen<{ active: boolean; count?: number }>("npu-bg", (p) => (store.npuBg = p?.active ? { active: true, count: p.count ?? 0 } : null)));
       unsubs.push(await listen<{ count: number }>("ai-suggest-queue", (p) => (store.suggestQueue = p?.count ?? 0)));
+      unsubs.push(await listen<{ id: number; start_ts: number }>("open-event", (p) => store.showEvent(p.id, p.start_ts || Date.now() / 1000)));
       // Click on a new-mail toast: open that email (also a click made while this page was loading).
       unsubs.push(
         await listen<{ message_id: number; account_id: number }>("open-message", async () => {
@@ -120,7 +124,7 @@
     }
     if (e.key === "F5") {
       e.preventDefault();
-      api.syncNow(null);
+      store.syncNow(null);
       return;
     }
     if (typing || store.route !== "mail" || store.compose) return;
@@ -174,11 +178,44 @@
     </main>
   </div>
   <Toasts />
+  <ReminderStack />
+  {#if store.busy > 0}
+    <div class="busybar" role="progressbar" aria-label={t("Working…")} transition:fade={{ duration: 200 }}><span></span></div>
+  {/if}
   <SendQueue />
   <SuggestPopup />
 </div>
 
 <style>
+  /* Thin progress bar along the top of the window while the user waits on something. */
+  .busybar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    z-index: 2000;
+    overflow: hidden;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .busybar span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    border-radius: 2px;
+    background: var(--brand-grad);
+    animation: busy 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  @keyframes busy {
+    from {
+      left: -40%;
+    }
+    to {
+      left: 100%;
+    }
+  }
   .shell {
     height: 100%;
     display: flex;

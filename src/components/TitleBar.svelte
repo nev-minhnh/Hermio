@@ -86,7 +86,7 @@
     <button class="ai-btn" class:on={store.aiOpen} title={t("AI assistant (Ctrl+J)")} onclick={() => { store.route = "mail"; store.aiOpen = !store.aiOpen; }}>
       <span>✦</span> {t("Assistant")}
     </button>
-    <button class="icon-btn sync-btn" class:on={syncOpen} title={t("Sync now and show the sync status (F5 syncs without opening)")} onclick={() => { if (!syncOpen) api.syncNow(null); syncOpen = !syncOpen; }}>
+    <button class="icon-btn sync-btn" class:on={syncOpen} title={t("Sync now and show the sync status (F5 syncs without opening)")} onclick={() => { if (!syncOpen) store.syncNow(null); syncOpen = !syncOpen; }}>
       <Icon name="sync" class={anySyncing ? "spin" : ""} />
       {#if anyError}<i class="errdot" transition:scale={{ duration: 160 }}></i>{/if}
     </button>

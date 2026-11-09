@@ -473,6 +473,75 @@ pub fn parse(text: &str, win_from: i64, win_to: i64) -> Result<Vec<Event>> {
     Ok(out)
 }
 
+/// What an invitation (.ics in an email) says beyond the event itself.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct InviteMeta {
+    /// REQUEST (an invitation), CANCEL, REPLY, PUBLISH… ("" when absent).
+    pub method: String,
+    pub uid: String,
+    pub sequence: String,
+    /// Organizer's address (without "mailto:").
+    pub organizer: String,
+    pub organizer_name: String,
+    /// Attendee addresses (lower case).
+    pub attendees: Vec<String>,
+    /// The raw DTSTART / DTEND / SUMMARY lines of the first VEVENT, for building a reply.
+    #[serde(skip)]
+    pub raw_lines: Vec<String>,
+}
+
+pub fn invite_meta(text: &str) -> InviteMeta {
+    let mut m = InviteMeta::default();
+    let mut in_event = false;
+    let mut events = 0;
+    for l in unfold(text) {
+        let Some(p) = parse_prop(&l) else {
+            match l.trim() {
+                "BEGIN:VEVENT" => {
+                    in_event = true;
+                    events += 1;
+                }
+                "END:VEVENT" => in_event = false,
+                _ => {}
+            }
+            continue;
+        };
+        match (p.name.as_str(), p.value.as_str()) {
+            ("BEGIN", "VEVENT") => {
+                in_event = true;
+                events += 1;
+                continue;
+            }
+            ("END", "VEVENT") => {
+                in_event = false;
+                continue;
+            }
+            _ => {}
+        }
+        if p.name == "METHOD" && !in_event {
+            m.method = p.value.trim().to_ascii_uppercase();
+        }
+        if !in_event || events != 1 {
+            continue;
+        }
+        let mailto = |v: &str| v.trim().trim_start_matches("mailto:").trim_start_matches("MAILTO:").to_string();
+        match p.name.as_str() {
+            "UID" => m.uid = p.value.trim().to_string(),
+            "SEQUENCE" => m.sequence = p.value.trim().to_string(),
+            "ORGANIZER" => {
+                m.organizer = mailto(&p.value);
+                m.organizer_name = p.params.get("CN").cloned().unwrap_or_default();
+            }
+            "ATTENDEE" => m.attendees.push(mailto(&p.value).to_lowercase()),
+            _ => {}
+        }
+        if matches!(p.name.as_str(), "DTSTART" | "DTEND" | "SUMMARY" | "RECURRENCE-ID") {
+            m.raw_lines.push(l.clone());
+        }
+    }
+    m
+}
+
 pub fn normalize_url(url: &str) -> String {
     let u = url.trim();
     if let Some(rest) = u.strip_prefix("webcal://") {

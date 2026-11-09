@@ -23,6 +23,9 @@ mod autoconfig;
 mod smtp;
 mod state;
 mod notify;
+mod toast;
+mod reminders;
+mod invites;
 mod sync;
 
 use std::sync::Arc;
@@ -123,12 +126,6 @@ fn main() {
                 sync_locks: Default::default(),
             });
             app.manage(state.clone());
-            // A click on a new-mail toast opens Hermio on that email.
-            {
-                use tauri_plugin_notification::NotificationExt;
-                let h = app.handle().clone();
-                let _ = app.notification().on_action(move |p| notify::clicked(&h, p));
-            }
             if let Some(old) = migrated {
                 sync::log_plain(&state, "info", format!("Moved your data from Nelo ({}) to Hermio", old.display()));
             }
@@ -141,6 +138,7 @@ fn main() {
             tauri::async_runtime::spawn(async {
                 npu::detect().await;
             });
+            reminders::start(state.clone());
             sync::start_scheduler(state);
             Ok(())
         })
@@ -246,6 +244,9 @@ fn main() {
             commands::sync_log_clear,
             commands::sync_log_open,
             commands::test_notification,
+            commands::reminder_skip,
+            commands::invite_info,
+            commands::invite_respond,
             commands::notification_pending,
             commands::schedule_send,
             commands::list_outbox,

@@ -143,6 +143,23 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS ix_events_range ON events(start_ts, end_ts);
 
+-- Calendar reminders already shown: `key` is "<event id>@<start>", `fired` the smallest lead
+-- time (seconds) announced so far, `skipped` when the user chose to skip the rest.
+CREATE TABLE IF NOT EXISTS reminders (
+  key TEXT PRIMARY KEY,
+  fired INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  start_ts INTEGER NOT NULL DEFAULT 0
+);
+
+-- What the user did with the calendar file in an email (so the prompt isn't repeated).
+CREATE TABLE IF NOT EXISTS invites (
+  message_id INTEGER PRIMARY KEY,
+  state TEXT NOT NULL,
+  event_id INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS spaces (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -792,6 +809,65 @@ impl Db {
             )?;
             let r = st.query_map(params![from, to], event_from_row)?;
             r.collect()
+        })
+    }
+    /// Timed events starting in (now, now + ahead], visible calendars only.
+    pub fn upcoming_events(&self, now: i64, ahead: i64) -> Result<Vec<Event>> {
+        self.with(|c| {
+            let mut st = c.prepare(
+                "SELECT e.id,e.calendar_id,e.remote_id,e.title,e.location,e.description,e.start_ts,e.end_ts,e.all_day,
+                        e.recurring,e.meet_link,c.color
+                 FROM events e JOIN calendars c ON c.id=e.calendar_id
+                 WHERE c.visible=1 AND e.all_day=0 AND e.start_ts > ?1 AND e.start_ts <= ?2 ORDER BY e.start_ts",
+            )?;
+            let r = st.query_map(params![now, now + ahead], event_from_row)?;
+            r.collect()
+        })
+    }
+    /// (fired lead time, skipped) for a reminder key.
+    pub fn reminder(&self, key: &str) -> Result<Option<(i64, bool)>> {
+        self.with(|c| {
+            c.query_row("SELECT fired, skipped FROM reminders WHERE key=?1", [key], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)))
+                .optional()
+        })
+    }
+    pub fn set_reminder(&self, key: &str, start_ts: i64, fired: Option<i64>, skipped: Option<bool>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO reminders(key, fired, skipped, start_ts) VALUES(?1, COALESCE(?2, 0), COALESCE(?3, 0), ?4)
+                 ON CONFLICT(key) DO UPDATE SET fired=COALESCE(?2, fired), skipped=COALESCE(?3, skipped)",
+                params![key, fired, skipped.map(|b| b as i64), start_ts],
+            )?;
+            // Forget reminders of events long gone.
+            c.execute("DELETE FROM reminders WHERE start_ts < ?1", [chrono::Utc::now().timestamp() - 3 * 86_400])?;
+            Ok(())
+        })
+    }
+    pub fn invite_state(&self, message_id: i64) -> Result<Option<(String, i64)>> {
+        self.with(|c| {
+            c.query_row("SELECT state, event_id FROM invites WHERE message_id=?1", [message_id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+        })
+    }
+    pub fn set_invite_state(&self, message_id: i64, state: &str, event_id: i64) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO invites(message_id, state, event_id, updated) VALUES(?1, ?2, ?3, ?4)
+                 ON CONFLICT(message_id) DO UPDATE SET state=?2, event_id=CASE WHEN ?3 > 0 THEN ?3 ELSE event_id END, updated=?4",
+                params![message_id, state, event_id, chrono::Utc::now().timestamp()],
+            )?;
+            Ok(())
+        })
+    }
+    /// An event already in the calendars with this title starting within a minute of `start`.
+    pub fn find_event(&self, title: &str, start: i64) -> Result<Option<i64>> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT id FROM events WHERE lower(trim(title))=lower(trim(?1)) AND abs(start_ts - ?2) <= 60 LIMIT 1",
+                params![title, start],
+                |r| r.get(0),
+            )
+            .optional()
         })
     }
     pub fn event(&self, id: i64) -> Result<Event> {

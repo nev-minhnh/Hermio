@@ -149,6 +149,7 @@
     if (!confirm(t("Remove {email} from Hermio?\n\nMail on the server is not affected. For POP3, downloaded .eml files are kept.", { email: a.email }))) return;
     await api.deleteAccount(a.id);
     await Promise.all([store.loadAccounts(), store.loadFolders()]);
+    store.success(t("{email} removed", { email: a.email }));
     store.open("unified:inbox");
     store.route = "settings";
     store.settingsTab = "accounts";
@@ -357,7 +358,7 @@
     <button class="btn primary" onclick={save} disabled={busy}>{accountId ? t("Save changes") : t("Add account")}</button>
     {#if accountId}
       <button class="btn" onclick={test} disabled={busy}>{#if busy}<Icon name="sync" size={16} class="spin" />{/if}{t("Test connection")}</button>
-      <button class="btn" onclick={() => api.syncNow(a.id)}><Icon name="sync" size={16} />{t("Sync now")}</button>
+      <button class="btn" onclick={() => store.syncNow(a.id)}><Icon name="sync" size={16} />{t("Sync now")}</button>
       <span class="grow"></span>
       <button class="btn danger" onclick={remove}><Icon name="trash" size={16} />{t("Remove account")}</button>
     {/if}

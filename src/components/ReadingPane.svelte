@@ -10,6 +10,9 @@
   import { pickSavePath } from "../lib/tauri";
   import ContextMenu, { type MenuItem } from "./ContextMenu.svelte";
   import EventDialog from "./EventDialog.svelte";
+  import InviteDialog from "./InviteDialog.svelte";
+  import { inviteDone } from "../lib/invite";
+  import type { InviteInfo } from "../lib/api";
   import AttachmentViewer from "./AttachmentViewer.svelte";
 
   let { onback }: { onback?: () => void } = $props();
@@ -49,6 +52,38 @@
   }
   const multi = $derived(store.selected.length > 1);
   const invite = $derived(body?.ics ? parseIcs(body.ics) : null);
+  /** The calendar event in this email, as the back end reads it (with time zones), and what was done with it. */
+  let inviteInfo = $state<InviteInfo | null>(null);
+  /** Ask about it (popup) — once per email. */
+  let askInvite = $state(false);
+  let inviteBusy = $state<string | null>(null);
+  function loadInvite(id: number) {
+    inviteInfo = null;
+    askInvite = false;
+    api
+      .inviteInfo(id)
+      .then((info) => {
+        if (shownId !== id) return;
+        inviteInfo = info;
+        const now = Date.now() / 1000;
+        askInvite = !!info && info.state === "" && !info.in_calendar && !["CANCEL", "REPLY"].includes(info.method) && info.end_ts > now;
+      })
+      .catch(() => {});
+  }
+  async function answer(a: "add" | "accepted" | "tentative" | "declined") {
+    if (!msg || !inviteInfo || inviteBusy) return;
+    const id = msg.id;
+    inviteBusy = a;
+    try {
+      const r = await api.inviteRespond(id, a);
+      inviteDone(a, r, inviteInfo);
+      if (shownId === id && inviteInfo) inviteInfo = { ...inviteInfo, state: a === "add" ? "added" : a, in_calendar: a !== "declined" || inviteInfo.in_calendar };
+    } catch (e) {
+      store.error(t("Couldn't update the calendar: {err}", { err: String(e) }));
+    } finally {
+      inviteBusy = null;
+    }
+  }
   const dark = $derived(document.documentElement.dataset.theme === "dark");
   const zoom = $derived(store.settings.reading_zoom || 1);
   const terms = $derived(searchTerms(store.search));
@@ -64,6 +99,13 @@
     body = b;
     error = err;
     snap = store.messages.find((m) => m.id === id) ?? null;
+    if (shownId !== id) {
+      if (b?.ics) loadInvite(id);
+      else {
+        inviteInfo = null;
+        askInvite = false;
+      }
+    } else if (b?.ics && !inviteInfo) loadInvite(id);
     // Set together with the body, so the email still on screen doesn't re-render meanwhile.
     if (shownId !== id && snap)
       allowImages = store.settings.remote_images === "always" || store.settings.trusted_senders.includes(snap.from_addr.toLowerCase());
@@ -104,7 +146,7 @@
       if (!m.seen && delay >= 0) {
         seenTimer = setTimeout(() => {
           const cur = store.messages.find((x) => x.id === id);
-          if (curId === id && cur && !cur.seen) store.markSeen([id], true);
+          if (curId === id && cur && !cur.seen) store.markSeen([id], true, false);
         }, delay * 1000);
       }
     });
@@ -366,7 +408,7 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
       <span class="muted small">{t("Nothing selected")}</span>
     </div>
   {:else}
-    <div class="stack" class:leaving>
+    <div class="xfade" class:leaving>
     {#key msg.id}
       <div class="content" in:enter>
         <div class="head">
@@ -425,17 +467,45 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
             </div>
           {/if}
 
-          {#if invite}
-            <div class="note info" transition:slide={{ duration: 200 }}>
+          {#if inviteInfo || invite}
+            {@const ii = inviteInfo}
+            <div class="note info inv" transition:slide={{ duration: 200 }}>
               <div class="cal-ico"><Icon name="calendar" size={18} /></div>
               <div class="grow">
-                <b>{invite.title}</b>
+                <b>{ii?.title ?? invite?.title}</b>
                 <div class="muted small">
-                  {new Date(invite.start * 1000).toLocaleString(locale(), { dateStyle: "full", timeStyle: invite.allDay ? undefined : "short" })}
-                  {#if invite.location} · {invite.location}{/if}
+                  {#if ii}
+                    {new Date(ii.start_ts * 1000).toLocaleString(locale(), { dateStyle: "full", timeStyle: ii.all_day ? undefined : "short" })}
+                    {#if ii.location} · {ii.location}{/if}
+                  {:else if invite}
+                    {new Date(invite.start * 1000).toLocaleString(locale(), { dateStyle: "full", timeStyle: invite.allDay ? undefined : "short" })}
+                    {#if invite.location} · {invite.location}{/if}
+                  {/if}
                 </div>
+                {#if ii && (ii.state === "accepted" || ii.state === "tentative" || ii.state === "declined")}
+                  <div class="small chip-state {ii.state}" in:fade={{ duration: 160 }}>
+                    <Icon name={ii.state === "declined" ? "close" : ii.state === "tentative" ? "help" : "check"} size={13} />
+                    {ii.state === "accepted" ? t("You said Yes") : ii.state === "tentative" ? t("You said Maybe") : t("You said No")}
+                  </div>
+                {:else if ii?.in_calendar}
+                  <div class="small chip-state accepted" in:fade={{ duration: 160 }}><Icon name="check" size={13} />{t("In your calendar")}</div>
+                {/if}
               </div>
-              <button class="btn" onclick={addInvite}><Icon name="plus" size={16} />{t("Add to calendar")}</button>
+              {#if ii?.method === "CANCEL"}
+                <span class="muted small">{t("Cancelled by the organizer")}</span>
+              {:else if ii && ii.method === "REQUEST" && ii.can_reply}
+                <div class="rsvp">
+                  <button class="btn" class:on={ii.state === "accepted"} onclick={() => answer("accepted")} disabled={!!inviteBusy}>{#if inviteBusy === "accepted"}<span class="spinner"></span>{/if}{t("Yes")}</button>
+                  <button class="btn" class:on={ii.state === "tentative"} onclick={() => answer("tentative")} disabled={!!inviteBusy}>{#if inviteBusy === "tentative"}<span class="spinner"></span>{/if}{t("Maybe")}</button>
+                  <button class="btn" class:on={ii.state === "declined"} onclick={() => answer("declined")} disabled={!!inviteBusy}>{#if inviteBusy === "declined"}<span class="spinner"></span>{/if}{t("No")}</button>
+                </div>
+              {:else if ii && !ii.in_calendar}
+                <button class="btn" onclick={() => answer("add")} disabled={!!inviteBusy}>{#if inviteBusy === "add"}<span class="spinner"></span>{:else}<Icon name="plus" size={16} />{/if}{t("Add to calendar")}</button>
+              {:else if ii}
+                <button class="btn subtle" onclick={() => ii && store.showEvent(0, ii.start_ts)}><Icon name="calendar" size={15} />{t("Open calendar")}</button>
+              {:else}
+                <button class="btn" onclick={addInvite}><Icon name="plus" size={16} />{t("Add to calendar")}</button>
+              {/if}
             </div>
           {/if}
 
@@ -502,6 +572,14 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
 {#if menu}
   <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
 {/if}
+{#if askInvite && inviteInfo && msg}
+  <InviteDialog
+    messageId={msg.id}
+    info={inviteInfo}
+    onclose={() => (askInvite = false)}
+    ondone={(st) => inviteInfo && (inviteInfo = { ...inviteInfo, state: st, in_calendar: st === "added" || st === "accepted" || st === "tentative" || inviteInfo.in_calendar })}
+  />
+{/if}
 {#if eventDraft}
   <EventDialog event={eventDraft} onclose={() => (eventDraft = null)} />
 {/if}
@@ -546,14 +624,14 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
     box-shadow: 6px 6px 0 var(--selected-strong);
     animation: scale-in 220ms var(--ease);
   }
-  .stack {
+  .xfade {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
     transition: opacity 110ms ease-out;
   }
-  .stack.leaving {
+  .xfade.leaving {
     opacity: 0;
   }
   .content {
@@ -727,6 +805,37 @@ mark.hermio-hl{background:#ffe066;color:#1b1b1b;border-radius:2px;padding:0 1px;
     background: var(--selected);
     color: var(--text);
     padding: 8px 10px;
+  }
+  .inv {
+    align-items: center;
+  }
+  .rsvp {
+    display: flex;
+    gap: 6px;
+  }
+  .rsvp .btn.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+  }
+  .chip-state {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--success) 14%, transparent);
+    color: var(--success);
+  }
+  .chip-state.tentative {
+    background: color-mix(in srgb, #b7791f 16%, transparent);
+    color: #b7791f;
+  }
+  .chip-state.declined {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
   }
   .cal-ico {
     width: 34px;
