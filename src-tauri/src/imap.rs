@@ -476,10 +476,10 @@ pub fn store_body(state: &AppState, account_id: i64, folder_id: i64, id: i64, ui
 /// Download one message's full source (used when opening a message that isn't cached yet).
 pub async fn fetch_raw(state: &AppState, a: &Account, m: &MessageRow) -> Result<Vec<u8>> {
     let folder = state.db.folder(m.folder_id)?;
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     s.examine(&folder.path).await?;
     let f: Vec<Fetch> = s.uid_fetch(m.uid.to_string(), "(UID BODY.PEEK[])").await?.try_collect().await?;
-    let _ = s.logout().await;
+    release(a.id, s);
     let raw = f
         .iter()
         .find_map(|x| x.body().map(|b| b.to_vec()))
@@ -488,9 +488,50 @@ pub async fn fetch_raw(state: &AppState, a: &Account, m: &MessageRow) -> Result<
     Ok(raw)
 }
 
+/// One signed-in connection per mailbox kept for quick operations (opening an email, saving a
+/// draft, moving, flags). Signing in to Gmail for every action took seconds and, with several
+/// running at once, ran into Gmail's limit on simultaneous connections, which slowed or broke the
+/// syncs. A kept connection is checked (NOOP) before reuse and dropped after 10 minutes.
+static POOL: std::sync::Mutex<Vec<(i64, ImapSession, std::time::Instant)>> = std::sync::Mutex::new(Vec::new());
+
+pub async fn session(state: &AppState, a: &Account) -> Result<ImapSession> {
+    let kept = {
+        let mut p = POOL.lock().unwrap();
+        p.iter().position(|e| e.0 == a.id).map(|i| p.swap_remove(i))
+    };
+    if let Some((_, mut s, at)) = kept {
+        if at.elapsed() < std::time::Duration::from_secs(600)
+            && matches!(tokio::time::timeout(std::time::Duration::from_secs(10), s.noop()).await, Ok(Ok(_)))
+        {
+            return Ok(s);
+        }
+    }
+    connect(state, a).await
+}
+
+/// Give a connection back after a successful operation (one is kept per mailbox).
+pub fn release(account_id: i64, s: ImapSession) {
+    let old = {
+        let mut p = POOL.lock().unwrap();
+        let old = p.iter().position(|e| e.0 == account_id).map(|i| p.swap_remove(i));
+        p.push((account_id, s, std::time::Instant::now()));
+        old
+    };
+    if let Some((_, mut o, _)) = old {
+        tauri::async_runtime::spawn(async move {
+            let _ = o.logout().await;
+        });
+    }
+}
+
+/// Forget kept connections of a mailbox (signed out, settings changed).
+pub fn forget(account_id: i64) {
+    POOL.lock().unwrap().retain(|e| e.0 != account_id);
+}
+
 pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
     crate::sync::log(state, a, "info", format!("Connecting to {}:{} ({})…", a.in_host, a.in_port, a.in_security));
-    let mut s = connect(state, a).await.context("Signing in to the mail server")?;
+    let mut s = session(state, a).await.context("Signing in to the mail server")?;
     crate::sync::log(state, a, "ok", "Signed in");
     sync_folders(state, &mut s, a).await.context("Listing folders")?;
     state.changed(a.id);
@@ -521,7 +562,7 @@ pub async fn sync_account(state: &AppState, a: &Account) -> Result<usize> {
         }
         state.changed(a.id);
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     // The account isn't "fine" when its inbox couldn't be synced.
     if let Some(e) = inbox_err {
         return Err(e.context("Inbox"));
@@ -543,20 +584,20 @@ fn by_folder(msgs: &[MessageRow]) -> HashMap<i64, Vec<MessageRow>> {
 }
 
 pub async fn store_flags(state: &AppState, a: &Account, msgs: &[MessageRow], flag: &str, on: bool) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     for (fid, group) in by_folder(msgs) {
         let folder = state.db.folder(fid)?;
         s.select(&folder.path).await?;
         let op = if on { "+FLAGS.SILENT" } else { "-FLAGS.SILENT" };
         let _: Vec<_> = s.uid_store(uid_set(&group), format!("{op} ({flag})")).await?.try_collect().await?;
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
 /// Move messages to another folder (MOVE, or COPY + delete + EXPUNGE).
 pub async fn move_to(state: &AppState, a: &Account, msgs: &[MessageRow], dest: &Folder) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     let caps = s.capabilities().await?;
     let has_move = caps.has_str("MOVE");
     for (fid, group) in by_folder(msgs) {
@@ -574,13 +615,13 @@ pub async fn move_to(state: &AppState, a: &Account, msgs: &[MessageRow], dest: &
             let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
         }
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
 /// Permanently delete messages.
 pub async fn expunge(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     for (fid, group) in by_folder(msgs) {
         let folder = state.db.folder(fid)?;
         s.select(&folder.path).await?;
@@ -588,7 +629,7 @@ pub async fn expunge(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Resu
         let _: Vec<_> = s.uid_store(&set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
         let _: Vec<_> = s.uid_expunge(&set).await?.try_collect().await?;
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
@@ -645,7 +686,7 @@ async fn prune_drafts(state: &AppState, s: &mut ImapSession, a: &Account, folder
 /// opened from) and bring the Drafts folder up to date, all over one connection, so the new
 /// version is in the list as soon as this returns. Returns the new version's message id.
 pub async fn save_draft(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], key: &str, replaces: Option<MessageRow>) -> Result<Option<i64>> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     s.append(&folder.path, Some("(\\Seen \\Draft)"), None, raw).await?;
     let kept = prune_drafts(state, &mut s, a, folder, key, true).await?;
     // (Unless it was one of this draft's own versions, already removed above.)
@@ -657,7 +698,7 @@ pub async fn save_draft(state: &AppState, a: &Account, folder: &Folder, raw: &[u
     }
     let fresh = state.db.folder(folder.id)?;
     sync_folder(state, &mut s, a, &fresh).await?;
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(match kept {
         Some(uid) => state.db.message_id_by_uid(folder.id, uid as i64)?,
         None => None,
@@ -670,49 +711,49 @@ pub async fn refresh_folders(state: &AppState, a: &Account, folder_ids: &[i64]) 
     if folder_ids.is_empty() {
         return Ok(());
     }
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     for id in folder_ids {
         let f = state.db.folder(*id)?;
         sync_folder(state, &mut s, a, &f).await?;
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     state.changed(a.id);
     Ok(())
 }
 
 /// Remove every saved version of a draft (it was sent or discarded).
 pub async fn delete_drafts(state: &AppState, a: &Account, folder: &Folder, key: &str) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     prune_drafts(state, &mut s, a, folder, key, false).await?;
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
 /// Throw messages away for good (drafts being replaced): see [`drop_uids`].
 pub async fn drop_messages(state: &AppState, a: &Account, msgs: &[MessageRow]) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     for (fid, group) in by_folder(msgs) {
         let folder = state.db.folder(fid)?;
         s.select(&folder.path).await?;
         drop_uids(state, &mut s, a, &folder, &uid_set(&group), "").await?;
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
 pub async fn append(state: &AppState, a: &Account, folder: &Folder, raw: &[u8], flags: &str) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     s.append(&folder.path, Some(flags), None, raw).await?;
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
 pub async fn create_folder(state: &AppState, a: &Account, path: &str) -> Result<()> {
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     s.create(path).await?;
     s.subscribe(path).await.ok();
     sync_folders(state, &mut s, a).await?;
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }
 
@@ -728,7 +769,7 @@ pub async fn fetch_bodies(state: &AppState, a: &Account, msgs: &[MessageRow]) ->
     if msgs.is_empty() {
         return Ok(());
     }
-    let mut s = connect(state, a).await?;
+    let mut s = session(state, a).await?;
     for (fid, group) in by_folder(msgs) {
         let folder = state.db.folder(fid)?;
         if s.examine(&folder.path).await.is_err() {
@@ -746,6 +787,6 @@ pub async fn fetch_bodies(state: &AppState, a: &Account, msgs: &[MessageRow]) ->
             }
         }
     }
-    let _ = s.logout().await;
+    release(a.id, s);
     Ok(())
 }

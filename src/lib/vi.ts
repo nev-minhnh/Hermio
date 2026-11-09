@@ -1188,4 +1188,7 @@ export const vi: Record<string, string> = {
   "Writing assistant: checking…": "Trợ lý viết: đang kiểm tra…",
   "Writing assistant: {err}": "Trợ lý viết: {err}",
   "Writing assistant: {n} suggestions": "Trợ lý viết: {n} gợi ý",
+  "Original": "Gốc",
+  "Original size": "Kích thước gốc",
+  "Remove picture": "Xoá ảnh",
 };

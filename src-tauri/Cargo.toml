@@ -1,6 +1,6 @@
 [package]
 name = "hermio"
-version = "0.8.0"
+version = "0.8.1"
 description = "Hermio – Automate your inbox flow. Email client for Windows 11 (IMAP, POP3, Google Workspace, calendar, on-device AI)"
 authors = ["nev-minhnh"]
 license = "MIT OR Apache-2.0"

@@ -98,7 +98,7 @@ async fn connect_with(a: &Account, creds: Creds) -> Result<Pop> {
     let mut pop = match a.in_security.as_str() {
         "starttls" => {
             let tcp = net::tcp(&a.in_host, a.in_port).await?;
-            let mut p = Pop { rd: BufReader::new(Conn::Plain(tcp)) };
+            let mut p = Pop { rd: BufReader::new(Conn::plain(tcp)) };
             p.line().await?;
             p.cmd("STLS").await.context("Server does not support STLS")?;
             let tcp = p.rd.into_inner().into_tcp().ok_or_else(|| anyhow!("STLS"))?;

@@ -27,6 +27,103 @@
   let imageInput: HTMLInputElement;
   let empty = $state(true);
 
+  // ---------- resizing pictures ----------
+  // Click a picture: a frame with corner handles (drag to resize, keeping its proportions) and a
+  // small bar with preset sizes. The size is saved as the picture's width (height follows).
+  let wrap: HTMLDivElement;
+  let img = $state<HTMLImageElement | null>(null);
+  let box = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+  let drag: { sx: number; w0: number; dir: number } | null = null;
+  function place() {
+    if (!img || !wrap || !img.isConnected) {
+      img = null;
+      box = null;
+      return;
+    }
+    const r = img.getBoundingClientRect();
+    const o = wrap.getBoundingClientRect();
+    box = { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height };
+  }
+  function pick(e: MouseEvent) {
+    const tgt = e.target as HTMLElement;
+    if (tgt.tagName === "IMG" && el?.contains(tgt)) {
+      img = tgt as HTMLImageElement;
+      // Select the picture itself, so Delete / Ctrl+X / typing act on it.
+      const r = document.createRange();
+      r.selectNode(img);
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(r);
+      place();
+    } else if (img) {
+      img = null;
+      box = null;
+    }
+  }
+  function maxWidth() {
+    return Math.max(40, (el?.clientWidth ?? 600) - 8);
+  }
+  function setWidth(px: number) {
+    if (!img) return;
+    const w = Math.round(Math.min(maxWidth(), Math.max(24, px)));
+    img.removeAttribute("height");
+    img.setAttribute("width", String(w));
+    img.style.width = `${w}px`;
+    img.style.height = "auto";
+    img.style.maxWidth = "100%";
+    place();
+    changed();
+  }
+  function startDrag(e: PointerEvent, dir: number) {
+    if (!img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    drag = { sx: e.clientX, w0: img.getBoundingClientRect().width, dir };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onDrag(e: PointerEvent) {
+    if (!drag) return;
+    setWidth(drag.w0 + (e.clientX - drag.sx) * drag.dir);
+  }
+  function endDrag() {
+    drag = null;
+  }
+  function presetPct(p: number) {
+    setWidth((maxWidth() * p) / 100);
+  }
+  function original() {
+    if (img) setWidth(img.naturalWidth || img.getBoundingClientRect().width);
+  }
+  function removeImg() {
+    if (!img) return;
+    img.remove();
+    img = null;
+    box = null;
+    changed();
+  }
+  $effect(() => {
+    if (!img) return;
+    const ro = new ResizeObserver(place);
+    ro.observe(img);
+    if (el) ro.observe(el);
+    const onScroll = () => place();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        img = null;
+        box = null;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("keydown", onKey);
+    };
+  });
+
   onMount(() => {
     el!.innerHTML = html;
     document.execCommand("defaultParagraphSeparator", false, "div");
@@ -65,6 +162,10 @@
 
   function changed() {
     updateEmpty();
+    if (img && !img.isConnected) {
+      img = null;
+      box = null;
+    } else if (img) place();
     onchange?.(el?.innerHTML ?? "");
   }
 
@@ -151,7 +252,7 @@
     <input type="color" bind:this={hiliteInput} value="#fff176" hidden onchange={(e) => exec("hiliteColor", (e.target as HTMLInputElement).value)} />
     <input type="file" accept="image/*" bind:this={imageInput} hidden onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) insertImageFile(f); (e.target as HTMLInputElement).value = ""; }} />
   </div>
-  <div class="area-wrap">
+  <div class="area-wrap" bind:this={wrap}>
     {#if empty && placeholder}<div class="ph">{placeholder}</div>{/if}
     <div
       class="area"
@@ -165,9 +266,24 @@
       oninput={changed}
       onkeyup={refresh}
       onmouseup={refresh}
+      onmousedown={pick}
       onpaste={onPaste}
       {onkeydown}
     ></div>
+    {#if img && box}
+      <div class="imgframe" style:left="{box.x}px" style:top="{box.y}px" style:width="{box.w}px" style:height="{box.h}px">
+        {#each [["nw", -1], ["ne", 1], ["sw", -1], ["se", 1]] as [pos, dir]}
+          <span class="h {pos}" role="presentation" onpointerdown={(e) => startDrag(e, dir as number)} onpointermove={onDrag} onpointerup={endDrag} onpointercancel={endDrag}></span>
+        {/each}
+        <span class="dim">{Math.round(box.w)} × {Math.round(box.h)}</span>
+      </div>
+      <div class="imgbar" style:left="{Math.max(0, box.x)}px" style:top="{Math.max(0, box.y - 40)}px">
+        {#each [25, 50, 75, 100] as p}<button type="button" onmousedown={(e) => e.preventDefault()} onclick={() => presetPct(p)}>{p}%</button>{/each}
+        <button type="button" onmousedown={(e) => e.preventDefault()} onclick={original} title={t("Original size")}>{t("Original")}</button>
+        <span class="sep"></span>
+        <button type="button" class="del" onmousedown={(e) => e.preventDefault()} onclick={removeImg} title={t("Remove picture")}><Icon name="trash" size={14} /></button>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -253,6 +369,93 @@
   }
   .area :global(img) {
     max-width: 100%;
+    cursor: pointer;
+  }
+  .imgframe {
+    position: absolute;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .imgframe .h {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: #fff;
+    border: 2px solid var(--accent);
+    pointer-events: auto;
+    touch-action: none;
+  }
+  .h.nw {
+    left: -7px;
+    top: -7px;
+    cursor: nwse-resize;
+  }
+  .h.ne {
+    right: -7px;
+    top: -7px;
+    cursor: nesw-resize;
+  }
+  .h.sw {
+    left: -7px;
+    bottom: -7px;
+    cursor: nesw-resize;
+  }
+  .h.se {
+    right: -7px;
+    bottom: -7px;
+    cursor: nwse-resize;
+  }
+  .dim {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.62);
+    color: #fff;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .imgbar {
+    position: absolute;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow);
+  }
+  .imgbar button {
+    height: 26px;
+    min-width: 30px;
+    padding: 0 7px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .imgbar button:hover {
+    background: var(--hover);
+  }
+  .imgbar .del:hover {
+    color: var(--danger);
+  }
+  .imgbar .sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border-strong);
+    margin: 0 2px;
   }
   .area :global(blockquote) {
     margin: 0 0 0 0.4em;

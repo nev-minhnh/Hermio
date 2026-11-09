@@ -3,6 +3,13 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.1
+
+- **Resize pictures** while writing an email or a signature: click a picture for a frame with corner handles (drag to resize, proportions kept, size shown), and a bar with 25 % / 50 % / 75 % / 100 % / Original and Remove.
+- **More reliable IMAP (Gmail) sync**:
+  - An IMAP connection that stopped answering (Wi-Fi change, sleep, a dropped or throttled Gmail session) used to wait forever: that mailbox's sync never finished, so it never synced again until Hermio restarted, and drafts/moves on it hung. Every read and write now gives up after 75 s without progress (POP3 already had such limits, which is why it stayed stable), and a whole sync is stopped after 20 minutes at most.
+  - One signed-in connection per mailbox is kept and reused for opening mail, saving drafts, moving, flags and the regular sync, instead of signing in to Gmail for every action — fewer sign-ins and no more running into Gmail's limit on simultaneous connections.
+
 ## 0.8.0
 
 - **New-mail popup by Hermio**: bold subject, From / To right under it (half the gap Windows uses), the time on the right; stays 7 s (paused while hovered), click opens the email. It never takes the focus, respects Do not disturb, plays the mail sound (can be turned off), and a silent copy still lands in the Windows notification centre. Settings → Notifications can switch back to plain Windows notifications.

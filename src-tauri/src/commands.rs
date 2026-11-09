@@ -119,6 +119,7 @@ pub fn default_pop3_dir(state: S, account_id: i64) -> String {
 #[tauri::command]
 pub async fn save_account(state: S<'_>, account: Account, password: Option<String>, smtp_password: Option<String>) -> R<i64> {
     let mut a = account;
+    imap::forget(a.id);
     if a.username.trim().is_empty() {
         a.username = a.email.clone();
     }
@@ -254,6 +255,7 @@ pub async fn test_account(state: S<'_>, account_id: i64) -> R<String> {
 
 #[tauri::command]
 pub fn delete_account(state: S, account_id: i64) -> R<()> {
+    imap::forget(account_id);
     state.db.delete_account(account_id).map_err(ea)?;
     oauth::delete_secret(&oauth::password_key(account_id));
     oauth::delete_secret(&oauth::refresh_key(account_id));

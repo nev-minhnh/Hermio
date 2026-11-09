@@ -107,7 +107,12 @@ async fn sync_once(state: &Arc<AppState>, account_id: i64) {
     state.emit("sync-state", json!({ "account_id": a.id, "syncing": true }));
     let started = std::time::Instant::now();
     log(&state, &a, "info", format!("Sync started ({} · {})", a.protocol.to_uppercase(), if a.auth == "oauth_google" { "Google sign-in".to_string() } else { format!("{}:{}", a.in_host, a.in_port) }));
-    let res = run(&state, &a).await;
+    // A sync never holds the mailbox for ever: past this, it's abandoned and the next one starts
+    // fresh (each step also gives up on its own when the server stops answering).
+    let res = match tokio::time::timeout(Duration::from_secs(20 * 60), run(&state, &a)).await {
+        Ok(r) => r,
+        Err(_) => Err(anyhow::anyhow!("Sync took more than 20 minutes and was stopped")),
+    };
     let err = match &res {
         Ok(n) => {
             log(&state, &a, "ok", format!("Sync finished in {:.1}s · {n} new unread", started.elapsed().as_secs_f32()));

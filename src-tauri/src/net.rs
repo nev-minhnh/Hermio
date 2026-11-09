@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
+use std::future::Future;
 use std::task::{Context as TaskCx, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -12,10 +13,25 @@ use tokio_rustls::TlsConnector;
 
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long a connection may go without any data in either direction while we wait for the
+/// server, before it's treated as dead. Without this an IMAP connection that silently dropped
+/// (Wi-Fi change, sleep, a NAT timeout, a throttled Gmail session) waited forever: the sync of
+/// that mailbox never finished, so it never synced again until Hermio restarted.
+pub const STALL: Duration = Duration::from_secs(75);
+
 #[derive(Debug)]
-pub enum Conn {
+pub enum Stream {
     Plain(TcpStream),
     Tls(Box<TlsStream<TcpStream>>),
+}
+
+/// A mail-server connection whose reads and writes fail with `TimedOut` after [`STALL`] without
+/// progress.
+#[derive(Debug)]
+pub struct Conn {
+    s: Stream,
+    rd: Option<Pin<Box<tokio::time::Sleep>>>,
+    wr: Option<Pin<Box<tokio::time::Sleep>>>,
 }
 
 /// Root certificates from the Windows certificate store. Antivirus "HTTPS/e-mail scanning", VPNs and
@@ -65,7 +81,7 @@ pub async fn upgrade(host: &str, s: TcpStream) -> Result<Conn> {
                 anyhow!("TLS error with {host}: {m}")
             }
         })?;
-    Ok(Conn::Tls(Box::new(tls)))
+    Ok(Conn::new(Stream::Tls(Box::new(tls))))
 }
 
 /// Connect with implicit TLS ("ssl") or plain ("starttls"/"none"; caller upgrades for STARTTLS).
@@ -74,45 +90,75 @@ pub async fn connect(host: &str, port: u16, security: &str) -> Result<Conn> {
     if security == "ssl" {
         upgrade(host, s).await
     } else {
-        Ok(Conn::Plain(s))
+        Ok(Conn::new(Stream::Plain(s)))
     }
 }
 
 impl Conn {
+    pub fn new(s: Stream) -> Conn {
+        Conn { s, rd: None, wr: None }
+    }
+    pub fn plain(s: TcpStream) -> Conn {
+        Conn::new(Stream::Plain(s))
+    }
     pub fn into_tcp(self) -> Option<TcpStream> {
-        match self {
-            Conn::Plain(s) => Some(s),
-            Conn::Tls(_) => None,
+        match self.s {
+            Stream::Plain(s) => Some(s),
+            Stream::Tls(_) => None,
+        }
+    }
+}
+
+/// Wait for `inner`; if it stays pending for [`STALL`], fail with `TimedOut`.
+fn guarded<T>(timer: &mut Option<Pin<Box<tokio::time::Sleep>>>, cx: &mut TaskCx<'_>, inner: Poll<std::io::Result<T>>) -> Poll<std::io::Result<T>> {
+    match inner {
+        Poll::Ready(r) => {
+            *timer = None;
+            Poll::Ready(r)
+        }
+        Poll::Pending => {
+            let t = timer.get_or_insert_with(|| Box::pin(tokio::time::sleep(STALL)));
+            if t.as_mut().poll(cx).is_ready() {
+                *timer = None;
+                return Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "the mail server stopped responding")));
+            }
+            Poll::Pending
         }
     }
 }
 
 impl AsyncRead for Conn {
     fn poll_read(self: Pin<&mut Self>, cx: &mut TaskCx<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            Conn::Plain(s) => Pin::new(s).poll_read(cx, buf),
-            Conn::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
-        }
+        let me = self.get_mut();
+        let r = match &mut me.s {
+            Stream::Plain(s) => Pin::new(s).poll_read(cx, buf),
+            Stream::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
+        };
+        guarded(&mut me.rd, cx, r)
     }
 }
 
 impl AsyncWrite for Conn {
     fn poll_write(self: Pin<&mut Self>, cx: &mut TaskCx<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-        match self.get_mut() {
-            Conn::Plain(s) => Pin::new(s).poll_write(cx, buf),
-            Conn::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
-        }
+        let me = self.get_mut();
+        let r = match &mut me.s {
+            Stream::Plain(s) => Pin::new(s).poll_write(cx, buf),
+            Stream::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
+        };
+        guarded(&mut me.wr, cx, r)
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut TaskCx<'_>) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            Conn::Plain(s) => Pin::new(s).poll_flush(cx),
-            Conn::Tls(s) => Pin::new(s.as_mut()).poll_flush(cx),
-        }
+        let me = self.get_mut();
+        let r = match &mut me.s {
+            Stream::Plain(s) => Pin::new(s).poll_flush(cx),
+            Stream::Tls(s) => Pin::new(s.as_mut()).poll_flush(cx),
+        };
+        guarded(&mut me.wr, cx, r)
     }
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut TaskCx<'_>) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            Conn::Plain(s) => Pin::new(s).poll_shutdown(cx),
-            Conn::Tls(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
+        match &mut self.get_mut().s {
+            Stream::Plain(s) => Pin::new(s).poll_shutdown(cx),
+            Stream::Tls(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
         }
     }
 }
