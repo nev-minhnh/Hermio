@@ -1216,4 +1216,10 @@ export const vi: Record<string, string> = {
   "page": "trang",
   "graphics (GPU)": "đồ hoạ (GPU)",
   "service": "dịch vụ",
+  "Sync status (F5 syncs all mailboxes)": "Trạng thái đồng bộ (F5 để đồng bộ tất cả hộp thư)",
+  "Show all mailboxes": "Hiện tất cả hộp thư",
+  "Show only this mailbox's log": "Chỉ hiện nhật ký của hộp thư này",
+  "Log of {who}": "Nhật ký của {who}",
+  "Log of all mailboxes": "Nhật ký của tất cả hộp thư",
+  "Show all": "Hiện tất cả",
 };

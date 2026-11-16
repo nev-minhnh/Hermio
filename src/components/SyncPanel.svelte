@@ -57,6 +57,7 @@
     api.syncLogClear().catch(() => {});
     lines = [];
   }
+  const colorOf = (id: number) => store.accounts.find((a) => a.id === id)?.color || "var(--text-3)";
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
   }
@@ -72,45 +73,48 @@
     <button class="icon-btn" title={t("Close")} onclick={onclose}><Icon name="close" size={15} /></button>
   </div>
 
+  <!-- Mailboxes as compact cards (two per row); click one to show only its log lines. -->
   <div class="accounts">
     {#each store.accounts as a (a.id)}
       {@const err = store.errors[a.id]}
-      <div class="acc" class:bad={!!err && !store.syncing[a.id]}>
-        <span class="dot" style:background={a.color || "var(--accent)"}></span>
-        <div class="grow ell">
-          <div class="ell"><b>{a.name || a.email}</b> <span class="muted small">{a.email} · {a.protocol.toUpperCase()}</span></div>
-          {#if store.syncing[a.id]}
-            <div class="small accent" in:fade={{ duration: 120 }}><Icon name="sync" size={12} class="spin" /> {t("Syncing…")}</div>
-          {:else if err}
-            <div class="small errtxt selectable" in:slide={{ duration: 160 }}>{err}</div>
-          {:else}
-            <div class="small muted">{a.enabled ? t("Synced {when}", { when: ago(a.last_sync) }) : t("Paused")}</div>
-          {/if}
-        </div>
-        <button class="icon-btn" title={t("Sync this mailbox")} onclick={() => store.syncNow(a.id)} disabled={!!store.syncing[a.id] || !a.enabled}>
-          <Icon name="sync" size={14} class={store.syncing[a.id] ? "spin" : ""} />
+      {@const busy = !!store.syncing[a.id]}
+      <div class="acc" class:bad={!!err && !busy} class:on={account === a.id} style:--c={a.color || "var(--accent)"}>
+        <button class="pick" title={account === a.id ? t("Show all mailboxes") : t("Show only this mailbox's log")} onclick={() => (account = account === a.id ? 0 : a.id)}>
+          <span class="dot"></span>
+          <span class="txt">
+            <span class="ell em">{a.email}</span>
+            {#if busy}
+              <span class="small accent"><Icon name="sync" size={11} class="spin" /> {t("Syncing…")}</span>
+            {:else if err}
+              <span class="small errtxt ell" title={err}>{err}</span>
+            {:else}
+              <span class="small muted ell">{a.enabled ? t("Synced {when}", { when: ago(a.last_sync) }) : t("Paused")} · {a.protocol.toUpperCase()}</span>
+            {/if}
+          </span>
+        </button>
+        <button class="icon-btn sm" title={t("Sync this mailbox")} onclick={() => store.syncNow(a.id)} disabled={busy || !a.enabled}>
+          <Icon name="sync" size={14} class={busy ? "spin" : ""} />
         </button>
       </div>
     {/each}
   </div>
 
   <div class="logbar">
-    <select class="input" bind:value={account}>
-      <option value={0}>{t("All mailboxes")}</option>
-      {#each store.accounts as a (a.id)}<option value={a.id}>{a.email}</option>{/each}
-    </select>
-    <label class="small chk"><input type="checkbox" bind:checked={onlyProblems} /> {t("Problems only")}</label>
+    <span class="small muted">{account ? t("Log of {who}", { who: store.accounts.find((x) => x.id === account)?.email ?? "" }) : t("Log of all mailboxes")}</span>
+    {#if account}<button class="lnk small" onclick={() => (account = 0)}>{t("Show all")}</button>{/if}
     <span class="grow"></span>
+    <label class="small chk"><input type="checkbox" bind:checked={onlyProblems} /> {t("Problems only")}</label>
     <button class="icon-btn" title={t("Copy log")} onclick={copy}><Icon name="copy" size={15} /></button>
     <button class="icon-btn" title={t("Open log file")} onclick={() => api.syncLogOpen().catch((e) => store.error(String(e)))}><Icon name="open" size={15} /></button>
     <button class="icon-btn" title={t("Clear")} onclick={clear}><Icon name="trash" size={15} /></button>
   </div>
   <div class="log selectable" bind:this={box} onscroll={onScroll}>
     {#each shown as l, i (l.ts + ":" + i)}
-      <div class="line {l.level}" in:fade={{ duration: 140 }}>
+      <div class="line {l.level}" class:one={!!account} in:fade={{ duration: 140 }}>
         <span class="tm">{time(l.ts)}</span>
         <span class="lv">{l.level === "ok" ? "✓" : l.level === "error" ? "✕" : l.level === "warn" ? "!" : "·"}</span>
-        <span class="msg">{#if !account}<span class="who">{l.account}</span>{/if}{l.message}</span>
+        {#if !account}<span class="who ell" title={l.account} style:--c={colorOf(l.account_id)}>{l.account.split("@")[0]}</span>{/if}
+        <span class="msg">{l.message}</span>
       </div>
     {:else}
       <div class="muted small empty">{t("Nothing logged yet. Press Sync all to start.")}</div>
@@ -129,8 +133,8 @@
     top: 46px;
     right: 14px;
     z-index: 801;
-    width: min(560px, calc(100vw - 28px));
-    max-height: min(640px, calc(100vh - 70px));
+    width: min(640px, calc(100vw - 28px));
+    max-height: min(680px, calc(100vh - 70px));
     display: flex;
     flex-direction: column;
     padding: 0;
@@ -154,33 +158,71 @@
     white-space: nowrap;
   }
   .accounts {
-    display: flex;
-    flex-direction: column;
-    max-height: 210px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 6px;
+    max-height: 190px;
     overflow-y: auto;
-    padding: 4px 6px;
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border);
   }
   .acc {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 6px;
-    border-radius: 6px;
-    transition: background 160ms var(--ease);
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 4px 2px 2px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    transition: background 160ms var(--ease), border-color 160ms var(--ease);
+  }
+  .acc:hover {
+    background: var(--hover);
+  }
+  .acc.on {
+    border-color: var(--c);
+    background: color-mix(in srgb, var(--c) 12%, transparent);
   }
   .acc.bad {
+    border-color: color-mix(in srgb, #c4314b 45%, transparent);
     background: color-mix(in srgb, #c4314b 7%, transparent);
   }
+  .pick {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 6px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .txt {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+  .em {
+    font-weight: 600;
+    font-size: 0.86rem;
+  }
   .acc .errtxt {
-    white-space: normal;
     color: #c4314b;
-    line-height: 1.35;
   }
   .dot {
     width: 9px;
     height: 9px;
     border-radius: 50%;
+    flex: none;
+    background: var(--c);
+  }
+  .icon-btn.sm {
+    width: 28px;
+    height: 28px;
     flex: none;
   }
   .accent {
@@ -197,6 +239,13 @@
     max-width: 240px;
     padding: 3px 8px;
     font-size: 0.82rem;
+  }
+  .lnk {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--text-accent);
+    cursor: pointer;
   }
   .chk {
     display: inline-flex;
@@ -215,9 +264,12 @@
   }
   .line {
     display: grid;
-    grid-template-columns: auto 14px 1fr;
+    grid-template-columns: auto 14px auto 1fr;
     gap: 6px;
     padding: 1px 0;
+  }
+  .line.one {
+    grid-template-columns: auto 14px 1fr;
   }
   .tm {
     color: var(--text-3);
@@ -230,9 +282,11 @@
   .msg {
     word-break: break-word;
   }
+  /* Who: the mailbox's name before @, in its colour, in a fixed column so messages line up. */
   .who {
-    color: var(--text-3);
-    margin-right: 6px;
+    width: 104px;
+    color: var(--c);
+    font-weight: 600;
   }
   .line.ok .lv {
     color: #107c10;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lowContrast } from "../lib/contrast";
   import { t } from "../lib/i18n.svelte";
   import { onMount } from "svelte";
   import Icon from "../lib/Icon.svelte";
@@ -177,7 +178,16 @@
     document.execCommand("defaultParagraphSeparator", false, "div");
     document.execCommand("styleWithCSS", false, "true");
     updateEmpty();
+    for (const ms of [0, 400, 1500]) setTimeout(checkQuoteContrast, ms);
   });
+
+  /** Quoted / forwarded mail: mark text too faint for its background so it shows readable here
+   *  (CSS above); the original colours are what gets sent. */
+  function checkQuoteContrast() {
+    for (const q of Array.from(el?.querySelectorAll(".hermio-quote") ?? [])) {
+      lowContrast(q, 1, (e, darkText) => e.setAttribute("data-hermio-c", darkText ? "d" : "l"));
+    }
+  }
 
   function updateEmpty() {
     empty = !el || (el.innerText.trim() === "" && !el.querySelector("img,table,hr,blockquote"));
@@ -563,8 +573,31 @@
     border-left: 3px solid var(--border-strong);
     color: var(--text-2);
   }
+  /* The quoted / forwarded email keeps its sender's colours, so it sits on white paper like
+     in the reading pane (dark text on the dark editor was unreadable). Only how it looks here:
+     nothing of this is sent. */
   .area :global(.hermio-quote) {
     margin-top: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1b1b1b;
+    color-scheme: light;
+    border: 1px solid var(--border);
+  }
+  .area :global(.hermio-quote blockquote) {
+    border-left-color: #c8c8c8;
+    color: #444;
+  }
+  .area :global(.hermio-quote a) {
+    color: #1d4fe0;
+  }
+  /* Marked by checkQuoteContrast (display only; the mark is removed before sending). */
+  .area :global([data-hermio-c="d"]) {
+    color: #1b1b1b !important;
+  }
+  .area :global([data-hermio-c="l"]) {
+    color: #f2f2f2 !important;
   }
   .area :global(table) {
     max-width: 100%;

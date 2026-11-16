@@ -182,7 +182,8 @@
       cc: [...cc],
       bcc: [...bcc],
       subject,
-      html: editorEl?.innerHTML ?? "",
+      // (Without the readability marks the editor adds to quoted mail.)
+      html: (editorEl?.innerHTML ?? "").replace(/ data-hermio-c="[dl]"/g, ""),
       in_reply_to: inReplyTo,
       references,
       attachments: attachments.map(({ path, from_message, name }) => ({ path, from_message, name })),

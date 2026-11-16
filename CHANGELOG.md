@@ -3,6 +3,12 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.5
+
+- Readable email text everywhere: mail is drawn in the light scheme (invitations and other mail with their own dark-mode CSS no longer turn light-grey on the white page), and any text with too little contrast against its background gets a readable colour. Quoted / forwarded mail in the composer sits on white paper with the same fix — display only, the original colours are sent.
+- The title-bar sync button only opens Sync status (F5 still syncs all). The panel shows mailboxes as compact cards, two per row; click one to see only its log; log lines show the mailbox name in its colour.
+- Saving a draft no longer shows the blue progress line at the top (the "Saving…" indicator is enough).
+
 ## 0.8.4
 
 - Less memory: WebView2's GPU process (≈650 MB of Hermio's 820 MB on a high-DPI screen) is capped to 256 MB for drawing, and the message rows and writing panel no longer each ask for their own GPU layer.

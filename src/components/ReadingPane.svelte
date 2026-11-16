@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lum, lowContrast } from "../lib/contrast";
   import { slide, fade } from "svelte/transition";
   import { reduced } from "../lib/motion";
   import { t, locale } from "../lib/i18n.svelte";
@@ -166,6 +167,21 @@
     }
   }
 
+  // The email is drawn in the light scheme (as senders design it; the dark choice inverts it),
+  // so mail with its own dark-mode CSS doesn't switch to light text on our white page.
+  const plainDark = $derived(dark && !!body?.html.startsWith('<div style="white-space:pre-wrap'));
+
+  /**
+   * Text that would be (nearly) invisible on what's behind it — e.g. mail written for a dark
+   * screen, or light-grey text on our white page — gets a readable colour instead.
+   */
+  function fixContrast(doc: Document) {
+    const win = doc.defaultView;
+    if (!win || !doc.body) return;
+    const pageBg = lum(win.getComputedStyle(doc.documentElement).backgroundColor) ?? 1;
+    lowContrast(doc.body, pageBg, (el, darkText) => el.style.setProperty("color", darkText ? "#1b1b1b" : "#f2f2f2", "important"));
+  }
+
   const srcdoc = $derived.by(() => {
     if (!body) return "";
     const imgs = allowImages ? "data: cid: https: http:" : "data: cid:";
@@ -183,8 +199,9 @@
     return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${imgs}; style-src 'unsafe-inline' https:; font-src ${fonts}; media-src data:">
 <base target="_blank">
+<meta name="color-scheme" content="${isPlain && dark ? "dark" : "light"}">
 <style>
-html{background:${bg};color:${fg};scrollbar-color:${sb} transparent;}
+html{color-scheme:${isPlain && dark ? "dark" : "light"};background:${bg};color:${fg};scrollbar-color:${sb} transparent;}
 html,body{margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.55;padding:20px 26px 40px;overflow-wrap:anywhere;}
 img{max-width:100%;height:auto;}
@@ -220,6 +237,7 @@ ${invert}
     const doc = frame?.contentDocument;
     frameReady = true;
     if (!doc) return;
+    fixContrast(doc);
     applyZoom();
     const first = highlightDom(doc.body, untrack(() => terms));
     if (first) first.scrollIntoView({ block: "center" });
@@ -581,6 +599,7 @@ ${invert}
               sandbox="allow-same-origin allow-popups allow-modals"
               {srcdoc}
               class:ready={frameReady}
+              style:color-scheme={plainDark ? "dark" : "light"}
               onload={onFrameLoad}
             ></iframe>
           {/if}

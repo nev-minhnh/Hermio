@@ -880,9 +880,9 @@ export const store = new Store();
 
 // ---------- every backend call: progress bar + failure popups ----------
 // Calls with their own progress/streaming UI, or that run in the background, stay silent.
-const QUIET = /^(ai_complete|translate_text|define_word|set_unread_badge|ai_(run|chat|chats|suggestions|suggest_queue|providers|skills|models)$|npu_(available|info|status|catalog|dirs|pull|install|cancel_pull)$|sync_log|notification_pending|invite_info|get_message|list_messages|list_folders|list_events|list_calendars|unread|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|set_setting|get_autostart|web_config|google_config|data_dir|guess_settings|discover_account)/;
+const QUIET = /^(save_draft|discard_draft|resource_usage|trim_memory|popup_|ai_complete|translate_text|define_word|set_unread_badge|ai_(run|chat|chats|suggestions|suggest_queue|providers|skills|models)$|npu_(available|info|status|catalog|dirs|pull|install|cancel_pull)$|sync_log|notification_pending|invite_info|get_message|list_messages|list_folders|list_events|list_calendars|unread|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|set_setting|get_autostart|web_config|google_config|data_dir|guess_settings|discover_account)/;
 // Failures of these are reported where they happen (inline), or are background reads.
-const NO_POPUP = /^(list_|get_|ai_complete|translate_text|define_word|set_unread_badge|ai_(run|test|chat|chats|suggestions|suggest_queue|providers|skills|models|read_file|read_bytes|cancel)$|npu_|sync_log|notification_|invite_info|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|unread|web_test|test_account|guess_settings|discover_account|google_config|web_config|data_dir)/;
+const NO_POPUP = /^(save_draft|resource_usage|trim_memory|popup_|list_|get_|ai_complete|translate_text|define_word|set_unread_badge|ai_(run|test|chat|chats|suggestions|suggest_queue|providers|skills|models|read_file|read_bytes|cancel)$|npu_|sync_log|notification_|invite_info|message_source|start_hidden|restored_note|suggest_contacts|attachment_data|message_groups|unread|web_test|test_account|guess_settings|discover_account|google_config|web_config|data_dir)/;
 let seq = 0;
 const timers = new Map<number, ReturnType<typeof setTimeout> | "shown">();
 setInvokeHooks({
