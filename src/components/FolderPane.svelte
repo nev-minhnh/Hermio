@@ -172,6 +172,7 @@
   {/if}
 
   <div class="tree scroll">
+    {#if store.settings.favorites !== false}
     <div class="section">{t("Favorites")}</div>
     <button class="node" class:on={store.view === "unified:inbox" && !store.search} onclick={() => store.open("unified:inbox")}>
       <Icon name="inbox" size={18} /><span class="name">{store.settings.space ? t("Space inbox") : t("All inboxes")}</span>
@@ -191,6 +192,7 @@
       <Icon name="draft" size={18} /><span class="name">{t("Drafts")}</span>
       {#if store.counts.drafts}<span class="badge muted" use:countUp={store.counts.drafts} transition:scale={{ duration: 160, start: 0.6 }}></span>{/if}
     </button>
+    {/if}
 
     {#if store.outbox.length}
       <button class="node" class:on={store.view === "outbox"} onclick={() => store.open("outbox")} transition:slide={{ duration: 160 }}>

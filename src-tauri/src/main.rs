@@ -162,6 +162,13 @@ fn main() {
                 let _ = state.db.set_setting("restored_note", &serde_json::to_string(&kept).unwrap_or_default());
             }
             ai::init_defaults(&state);
+            // A mailbox's own group never holds another mailbox's mail (earlier versions let the
+            // AI sorter put it there).
+            if let Ok(n) = state.db.purge_foreign_group_mail() {
+                if n > 0 {
+                    sync::log_plain(&state, "info", format!("Removed {n} message(s) from groups that belong to another mailbox"));
+                }
+            }
             npu::start_idle_watch(state.clone());
             // Learn about the NPU (device, driver, generation) in the background at start-up.
             tauri::async_runtime::spawn(async {

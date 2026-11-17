@@ -3,6 +3,13 @@
 All notable changes to Hermio. Versions before 0.5.0 were released under the name **Nelo**
 (entries kept in their original Vietnamese).
 
+## 0.8.6
+
+- "Send a test notification" froze Hermio: the popup window was created from a command running on the main thread, which deadlocks on Windows. It is now created on its own thread.
+- Groups: a mailbox's own group only ever holds that mailbox's mail. This is enforced where mail is added to a group (rules, AI sorting, AI suggestions, drag and drop), mail of other mailboxes already in such groups is removed at start-up, and a global group made local drops the other mailboxes' mail. Global groups still take mail from every mailbox.
+- Settings → Mail → Favorites: turn the Favorites section on or off. On: Hermio opens on All inboxes. Off: it opens on the Default mailbox (new setting; the first mailbox if none is chosen).
+- The email background setting is gone: mail is always shown on white, and the message you write (new mail, reply, forward, signature editor) is on white too.
+
 ## 0.8.5
 
 - Readable email text everywhere: mail is drawn in the light scheme (invitations and other mail with their own dark-mode CSS no longer turn light-grey on the white page), and any text with too little contrast against its background gets a readable colour. Quoted / forwarded mail in the composer sits on white paper with the same fix — display only, the original colours are sent.

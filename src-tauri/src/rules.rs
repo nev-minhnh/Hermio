@@ -209,6 +209,28 @@ mod sync_tests {
         format!("From: {from}\r\nTo: me@example.com\r\nSubject: {subject}\r\nDate: Sat, 7 Nov 2026 10:00:00 +0700\r\nMessage-ID: <{subject}@x>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n").into_bytes()
     }
 
+    #[test]
+    fn local_group_only_takes_its_mailbox() {
+        let (db, acc, inbox, dir) = setup();
+        let other = db.save_account(&Account { email: "other@example.com".into(), name: "O".into(), protocol: "imap".into(), enabled: true, ..Default::default() }).unwrap();
+        let other_inbox = db.upsert_folder(other, "INBOX", "Inbox", "/", "inbox", true).unwrap();
+        let local = db.save_group(&Group { name: "Mine".into(), color: "#000".into(), hide_from_inbox: true, account_id: Some(acc), ..Default::default() }).unwrap();
+        let global = db.save_group(&Group { name: "All".into(), color: "#000".into(), hide_from_inbox: true, ..Default::default() }).unwrap();
+        let mine = arrive(&db, acc, inbox, 1, &raw("a@x.com", "one", "b"));
+        let theirs = arrive(&db, other, other_inbox, 1, &raw("a@x.com", "two", "b"));
+        db.add_to_group(&[mine, theirs], local).unwrap();
+        db.add_to_group(&[mine, theirs], global).unwrap();
+        assert_eq!(db.message_group_ids(mine).unwrap().len(), 2);
+        assert_eq!(db.message_group_ids(theirs).unwrap(), vec![global], "another mailbox's mail stays out of a local group");
+        // A global group made local drops the other mailboxes' mail.
+        let mut g = db.groups().unwrap().into_iter().find(|g| g.id == global).unwrap();
+        g.account_id = Some(acc);
+        db.save_group(&g).unwrap();
+        assert_eq!(db.purge_foreign_group_mail().unwrap(), 1);
+        assert!(db.message_group_ids(theirs).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// Mimics imap::sync_folder: header phase on arrival, then the body phase.
     fn arrive(db: &Db, acc: i64, inbox: i64, uid: u32, r: &[u8]) -> i64 {
         let hdr_end = r.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;

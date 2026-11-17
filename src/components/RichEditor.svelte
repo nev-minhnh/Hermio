@@ -451,14 +451,22 @@
   }
   .ph {
     position: absolute;
-    top: 12px;
-    left: 4px;
-    color: var(--text-3);
+    top: 14px;
+    left: 18px;
+    color: #8a8a8a;
     pointer-events: none;
   }
+  /* The message is written on white paper, like it is read (and like the recipient sees it),
+     whatever the app's theme. */
   .area {
     outline: none;
-    padding: 12px 4px;
+    padding: 14px 18px;
+    min-height: 100%;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1b1b1b;
+    color-scheme: light;
+    caret-color: #1b1b1b;
     font-family: "Segoe UI", sans-serif;
     font-size: 14.5px;
     line-height: 1.5;
@@ -570,27 +578,14 @@
   .area :global(blockquote) {
     margin: 0 0 0 0.4em;
     padding-left: 1em;
-    border-left: 3px solid var(--border-strong);
-    color: var(--text-2);
-  }
-  /* The quoted / forwarded email keeps its sender's colours, so it sits on white paper like
-     in the reading pane (dark text on the dark editor was unreadable). Only how it looks here:
-     nothing of this is sent. */
-  .area :global(.hermio-quote) {
-    margin-top: 12px;
-    padding: 12px 16px;
-    border-radius: 10px;
-    background: #ffffff;
-    color: #1b1b1b;
-    color-scheme: light;
-    border: 1px solid var(--border);
-  }
-  .area :global(.hermio-quote blockquote) {
-    border-left-color: #c8c8c8;
+    border-left: 3px solid #c8c8c8;
     color: #444;
   }
-  .area :global(.hermio-quote a) {
+  .area :global(a) {
     color: #1d4fe0;
+  }
+  .area :global(.hermio-quote) {
+    margin-top: 12px;
   }
   /* Marked by checkQuoteContrast (display only; the mark is removed before sending). */
   .area :global([data-hermio-c="d"]) {

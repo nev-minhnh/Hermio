@@ -1222,4 +1222,8 @@ export const vi: Record<string, string> = {
   "Log of {who}": "Nhật ký của {who}",
   "Log of all mailboxes": "Nhật ký của tất cả hộp thư",
   "Show all": "Hiện tất cả",
+  "Default mailbox": "Hộp thư mặc định",
+  "The mailbox Hermio opens on when Favorites is off.": "Hộp thư Hermio mở ra khi khởi động nếu mục Yêu thích đang tắt.",
+  "Shows All inboxes, Unread, Flagged, Sent and Drafts of all mailboxes. On: Hermio opens on All inboxes. Off: it opens on the default mailbox.": "Hiện Tất cả hộp thư đến, Chưa đọc, Gắn cờ, Đã gửi và Thư nháp của mọi hộp thư. Bật: Hermio mở vào Tất cả hộp thư đến. Tắt: Hermio mở vào hộp thư mặc định.",
+  "First mailbox": "Hộp thư đầu tiên",
 };

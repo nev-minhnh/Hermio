@@ -1048,6 +1048,8 @@ pub fn list_groups(state: S) -> R<Vec<Group>> {
 #[tauri::command]
 pub fn save_group(state: S, group: Group) -> R<i64> {
     let id = state.db.save_group(&group).map_err(ea)?;
+    // Made local to one mailbox: mail of other mailboxes leaves it.
+    let _ = state.db.purge_foreign_group_mail();
     state.changed(0);
     Ok(id)
 }

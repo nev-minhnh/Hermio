@@ -61,6 +61,15 @@ pub fn push(app: &AppHandle, item: PopupItem, sound: bool) {
     if sound {
         chime();
     }
+    // The window is created on a thread of its own: creating one from a command that runs on
+    // the main thread ("Send a test notification") deadlocks on Windows and froze the app.
+    let app = app.clone();
+    std::thread::spawn(move || show(&app));
+}
+
+fn show(app: &AppHandle) {
+    static CREATING: Mutex<()> = Mutex::new(());
+    let _one = CREATING.lock().unwrap_or_else(|e| e.into_inner());
     if app.get_webview_window(LABEL).is_none() {
         let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#notify".into()))
             .title("Hermio")

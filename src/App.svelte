@@ -38,6 +38,7 @@
       await store.loadSettings();
       await Promise.all([store.loadAccounts(), store.loadSpaces(), store.loadGroups(), store.loadSignatures()]);
       await store.loadFolders();
+      store.view = store.startView();
       await store.loadMessages(true);
       store.ready = true;
       store.loadOutbox();

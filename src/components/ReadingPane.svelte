@@ -86,7 +86,8 @@
     }
   }
   // Email background: white unless chosen otherwise in Settings → Appearance.
-  const dark = $derived(store.settings.mail_bg === "dark" || (store.settings.mail_bg === "system" && store.osDark));
+  // Email is always shown on white, as senders design it.
+  const dark = false as boolean;
   const zoom = $derived(store.settings.reading_zoom || 1);
   const terms = $derived(searchTerms(store.search));
   const files = $derived(body ? body.attachments.filter((a) => !a.inline) : []);

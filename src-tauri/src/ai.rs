@@ -2070,7 +2070,9 @@ async fn classify(state: &AppState, provider_id: &str, ids: &[i64]) -> Result<us
         if !ids.contains(&it.id) {
             continue;
         }
-        let gid = it.group_id.filter(|g| groups.iter().any(|x| x.id == *g));
+        // Never into a group of another mailbox, whatever the model answered.
+        let acc = state.db.message(it.id).map(|m| m.account_id).unwrap_or(0);
+        let gid = it.group_id.filter(|g| groups.iter().any(|x| x.id == *g && x.account_id.map(|a| a == acc).unwrap_or(true)));
         let status = if gid.is_none() && it.new_group.trim().is_empty() { "keep" } else { "pending" };
         state.db.with(|c| {
             c.execute(
@@ -2115,7 +2117,12 @@ pub fn resolve_suggestion(state: &AppState, message_id: i64, accept: bool) -> Re
         let gid = match gid {
             Some(g) => g,
             None if !new_group.trim().is_empty() => {
-                let existing = state.db.groups()?.into_iter().find(|g| g.name.eq_ignore_ascii_case(new_group.trim()));
+                let acc = state.db.message(message_id).map(|m| m.account_id).unwrap_or(0);
+                let existing = state
+                    .db
+                    .groups()?
+                    .into_iter()
+                    .find(|g| g.name.eq_ignore_ascii_case(new_group.trim()) && g.account_id.map(|a| a == acc).unwrap_or(true));
                 match existing {
                     Some(g) => g.id,
                     None => state.db.save_group(&Group { name: new_group.trim().into(), color: "#8764b8".into(), hide_from_inbox: true, ..Default::default() })?,

@@ -462,14 +462,6 @@
               {/each}
             </div>
           </div>
-          <div class="field badge-opt">
-            <span>{t("Email background")}<br /><span class="muted small">{t("White shows mail as senders designed it. Dark also darkens formatted mail (pictures keep their colours).")}</span></span>
-            <div class="segmented" use:pill>
-              <button class:on={store.settings.mail_bg === "light"} onclick={() => store.set("mail_bg", "light")}>{t("White")}</button>
-              <button class:on={store.settings.mail_bg === "dark"} onclick={() => store.set("mail_bg", "dark")}>{t("Dark")}</button>
-              <button class:on={store.settings.mail_bg === "system"} onclick={() => store.set("mail_bg", "system")}>{t("System")}</button>
-            </div>
-          </div>
           <div class="field">
             <span>{t("Accent color")}</span>
             <div class="colors">
@@ -595,6 +587,18 @@
               <span class="muted small" style="width:56px;text-align:right">{store.settings.send_delay} s</span>
             </div>
             <span class="muted small">{t("After you press Send, the message waits in the corner so you can still cancel or send it right away.")}</span>
+          </label>
+          <button class="toggle" onclick={() => { store.set("favorites", store.settings.favorites === false); if (store.settings.favorites === false && store.view.startsWith("unified:")) store.open(store.startView()); }}>
+            <span class="switch" class:on={store.settings.favorites !== false}></span>
+            <span>{t("Favorites")}<br /><span class="muted small">{t("Shows All inboxes, Unread, Flagged, Sent and Drafts of all mailboxes. On: Hermio opens on All inboxes. Off: it opens on the default mailbox.")}</span></span>
+          </button>
+          <label class="field">
+            <span>{t("Default mailbox")}</span>
+            <select class="input" value={store.settings.default_account} onchange={(e) => store.set("default_account", Number((e.target as HTMLSelectElement).value))}>
+              <option value={0} selected={!store.settings.default_account}>{t("First mailbox")}</option>
+              {#each store.accounts as a (a.id)}<option value={a.id} selected={store.settings.default_account === a.id}>{a.email}</option>{/each}
+            </select>
+            <span class="muted small">{t("The mailbox Hermio opens on when Favorites is off.")}</span>
           </label>
           <button class="toggle" onclick={() => store.set("confirm_delete", !store.settings.confirm_delete)}>
             <span class="switch" class:on={store.settings.confirm_delete}></span>{t("Ask before deleting")}

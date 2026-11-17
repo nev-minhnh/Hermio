@@ -26,8 +26,10 @@ export interface AssistOpen {
 
 export interface Settings {
   theme: "system" | "light" | "dark";
-  /** Background of the email being read: white (as senders design them), dark, or like the app. */
-  mail_bg: "light" | "dark" | "system";
+  /** Show the Favorites section (All inboxes, Unread, Flagged, Sent, Drafts); Hermio then opens on All inboxes. */
+  favorites: boolean;
+  /** The mailbox Hermio opens on when Favorites is off (0 = the first mailbox). */
+  default_account: number;
   accent: string;
   density: "comfortable" | "compact";
   font_scale: number;
@@ -98,7 +100,8 @@ export interface Settings {
 
 export const defaults: Settings = {
   theme: "system",
-  mail_bg: "light",
+  favorites: true,
+  default_account: 0,
   accent: "#1d4fe0",
   density: "comfortable",
   font_scale: 1,
@@ -227,6 +230,14 @@ class Store {
   loading = $state(false);
   selected = $state<number[]>([]);
   anchor = $state<number | null>(null);
+  /** The view Hermio opens on: All inboxes with Favorites on, else the default mailbox's inbox. */
+  startView(): string {
+    if (this.settings.favorites !== false) return "unified:inbox";
+    const acc = this.accounts.find((a) => a.id === this.settings.default_account) ?? this.accounts[0];
+    if (!acc) return "unified:inbox";
+    const inbox = this.folders.find((f) => f.account_id === acc.id && f.role === "inbox");
+    return inbox ? `folder:${inbox.id}` : `account:${acc.id}`;
+  }
   compose = $state<ComposeInit | null>(null);
   /** The app is in dark mode (chosen, or following Windows). */
   isDark = $state(false);

@@ -695,7 +695,11 @@ impl Db {
                     let ids: Vec<String> = list.split(',').filter_map(|x| x.trim().parse::<i64>().ok()).map(|x| x.to_string()).collect();
                     where_.push(format!("m.id IN ({})", if ids.is_empty() { "-1".into() } else { ids.join(",") }));
                 } else if let Some(id) = v.strip_prefix("group:").and_then(|s| s.parse::<i64>().ok()) {
-                    where_.push("m.id IN (SELECT message_id FROM message_groups WHERE group_id = ?)".into());
+                    where_.push(
+                        "m.id IN (SELECT mg.message_id FROM message_groups mg JOIN groups g ON g.id=mg.group_id
+                                  WHERE mg.group_id = ? AND (g.account_id IS NULL OR g.account_id = m.account_id))"
+                            .into(),
+                    );
                     args.push(id.into());
                 } else if let Some(id) = v.strip_prefix("folder:").and_then(|s| s.parse::<i64>().ok()) {
                     where_.push("m.folder_id = ?".into());
@@ -1226,6 +1230,18 @@ impl Db {
             }
         })
     }
+    /// Remove mail from groups that belong to another mailbox (left by earlier versions, or
+    /// after a global group was made local). Returns how many were removed.
+    pub fn purge_foreign_group_mail(&self) -> Result<usize> {
+        Ok(self.with(|c| {
+            c.execute(
+                "DELETE FROM message_groups WHERE rowid IN (
+                   SELECT mg.rowid FROM message_groups mg JOIN groups g ON g.id=mg.group_id JOIN messages m ON m.id=mg.message_id
+                   WHERE g.account_id IS NOT NULL AND g.account_id <> m.account_id)",
+                [],
+            )
+        })?)
+    }
     pub fn delete_group(&self, id: i64) -> Result<()> {
         self.with(|c| c.execute("DELETE FROM groups WHERE id=?1", [id]))?;
         Ok(())
@@ -1233,7 +1249,13 @@ impl Db {
     pub fn add_to_group(&self, ids: &[i64], group_id: i64) -> Result<()> {
         self.with(|c| {
             for id in ids {
-                c.execute("INSERT OR IGNORE INTO message_groups(message_id,group_id) VALUES(?1,?2)", params![id, group_id])?;
+                // A mailbox's own group only takes that mailbox's mail (global groups take any).
+                c.execute(
+                    "INSERT OR IGNORE INTO message_groups(message_id,group_id)
+                     SELECT m.id, g.id FROM messages m, groups g
+                     WHERE m.id=?1 AND g.id=?2 AND (g.account_id IS NULL OR g.account_id = m.account_id)",
+                    params![id, group_id],
+                )?;
             }
             Ok(())
         })
